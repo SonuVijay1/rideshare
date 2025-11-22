@@ -1,4 +1,4 @@
-# rideshare_app
+# rideshareApp
 
 A new Flutter project.
 
