@@ -7,6 +7,7 @@ import 'package:rideshareApp/services/autocomplete_service.dart';
 import 'package:rideshareApp/services/location_service.dart';
 import 'package:rideshareApp/services/recent_location_service.dart';
 
+
 enum LastEdited { pickup, drop }
 
 class OfferRideScreen extends StatefulWidget {
@@ -139,7 +140,9 @@ class _OfferRideScreenState extends State<OfferRideScreen>
   Future<void> _onLocationChanged(String v, bool isPickup) async {
     _lastEdited = isPickup ? LastEdited.pickup : LastEdited.drop;
 
-    final recent = await RecentLocationService.getRecent();
+    final recent = (await RecentLocationService.getRecent())
+    .where((e) => e["type"] != "current")
+    .toList();
 
     if (v.trim().isEmpty) {
       setState(() {
