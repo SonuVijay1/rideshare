@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:rideshareApp/screens/book/ride_details_screen.dart';
+import 'package:intl/intl.dart';
+import '../book/ride_details_screen.dart';
 
 class AvailableRidesScreen extends StatelessWidget {
   final List<QueryDocumentSnapshot> rides;
@@ -14,265 +15,210 @@ class AvailableRidesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final grouped = _groupRidesByDay(rides);
-
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
-        toolbarHeight: 88,
         backgroundColor: Colors.black,
+        elevation: 0,
+        title: const Text("Available Rides", style: TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
-        title: const Text(
-          "Available Rides",
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
       ),
-      body: grouped.isEmpty
+      body: rides.isEmpty
           ? const Center(
-              child: Text(
-                "No rides found",
-                style: TextStyle(color: Colors.white70),
-              ),
-            )
-          : ListView(
-              padding: const EdgeInsets.only(bottom: 20),
-              children: grouped.entries
-                  .map(
-                    (entry) =>
-                        _buildSection(context, entry.key, entry.value),
-                  )
-                  .toList(),
+              child: Text("No rides found matching your criteria",
+                  style: TextStyle(color: Colors.white54)))
+          : ListView.separated(
+              padding: const EdgeInsets.all(20),
+              itemCount: rides.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 16),
+              itemBuilder: (context, index) {
+                final doc = rides[index];
+                final data = doc.data() as Map<String, dynamic>;
+
+                return _RideTile(
+                  initialData: data,
+                  rideRef: doc.reference,
+                  requiredSeats: requiredSeats,
+                );
+              },
             ),
     );
   }
+}
 
-  /* ---------------- SECTION ---------------- */
+class _RideTile extends StatelessWidget {
+  final Map<String, dynamic> initialData;
+  final DocumentReference rideRef;
+  final int requiredSeats;
 
-  Widget _buildSection(
-    BuildContext context,
-    String title,
-    List<QueryDocumentSnapshot> rides,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Text(
-            title,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+  const _RideTile({
+    required this.initialData,
+    required this.rideRef,
+    required this.requiredSeats,
+  });
+
+  String _formatDate(String? dateStr) {
+    if (dateStr == null || dateStr.isEmpty) return "Unknown Date";
+    try {
+      final date = DateFormat("yyyy-MM-dd").parse(dateStr);
+      return DateFormat("EEE, dd MMM").format(date);
+    } catch (e) {
+      return dateStr;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: rideRef.snapshots(),
+      builder: (context, snapshot) {
+        final data = snapshot.hasData && snapshot.data != null && snapshot.data!.exists
+            ? snapshot.data!.data() as Map<String, dynamic>
+            : initialData;
+
+        final seatsAvailable = data['seatsAvailable'] ?? 0;
+        final isAvailable = seatsAvailable >= requiredSeats;
+
+        return InkWell(
+          onTap: isAvailable
+              ? () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => RideDetailsScreen(
+                        rideData: data,
+                        rideReference: rideRef,
+                      ),
+                    ),
+                  );
+                }
+              : () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(seatsAvailable == 0
+                          ? "This ride is fully booked"
+                          : "Only $seatsAvailable seat(s) available"),
+                    ),
+                  );
+                },
+          child: Opacity(
+            opacity: isAvailable ? 1.0 : 0.5,
+            child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E1E1E),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!isAvailable)
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orangeAccent.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, color: Colors.orangeAccent, size: 16),
+                    const SizedBox(width: 8),
+                    Text(
+                      seatsAvailable == 0 ? "Fully Booked" : "Not enough seats",
+                      style: const TextStyle(color: Colors.orangeAccent, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.calendar_today, size: 14, color: Colors.white54),
+                    const SizedBox(width: 6),
+                    Text(
+                      "${_formatDate(data['date'])} • ${data['time'] ?? ''}",
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    "₹${data['price'] ?? '150'}", 
+                    style: const TextStyle(
+                      color: Colors.greenAccent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
             ),
+            const Divider(color: Colors.white10, height: 24),
+            _locationRow(Icons.circle, Colors.green, data['from'] ?? ''),
+            Container(
+              margin: const EdgeInsets.only(left: 11),
+              height: 16,
+              width: 2,
+              color: Colors.white12,
+            ),
+            _locationRow(Icons.location_on, Colors.redAccent, data['to'] ?? ''),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _infoItem(Icons.directions_car, "${(data['distanceKm'] as num?)?.round() ?? 0} km"),
+                _infoItem(Icons.timer, data['duration'] ?? ''),
+                _infoItem(Icons.airline_seat_recline_normal, "${data['seatsAvailable']} Seats"),
+              ],
+            ),
+          ],
+        ),
+      ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _locationRow(IconData icon, Color color, String text) {
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 24),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+                color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
           ),
         ),
-        ...rides.map((doc) => _buildRideTile(context, doc)).toList(),
       ],
     );
   }
 
-  /* ---------------- RIDE TILE ---------------- */
-
-  Widget _buildRideTile(
-    BuildContext context,
-    QueryDocumentSnapshot doc,
-  ) {
-    final ride = doc.data() as Map<String, dynamic>;
-
-    final seatsAvailable = ride["seatsAvailable"] ?? 0;
-    final seatsBooked = ride["seatsBooked"] ?? 0;
-    final seatsLeft = seatsAvailable - seatsBooked;
-
-    if (seatsLeft < requiredSeats) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ---------- FROM → TO ----------
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  "${ride["from"]} → ${ride["to"]}",
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              Text(
-                "$seatsLeft seats",
-                style: const TextStyle(
-                  color: Colors.greenAccent,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 10),
-
-          // ---------- TIMES ----------
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  "Pickup: ${ride["time"]}",
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Text(
-                  "Drop: ${_calculateEndTime(ride)}",
-                  textAlign: TextAlign.end,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 6),
-
-          // ---------- DURATION ----------
-          Text(
-            "${ride["duration"]} • ${ride["distanceKm"].round()} km",
-            style: const TextStyle(
-              color: Colors.white54,
-              fontSize: 13,
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // ---------- ACTION ----------
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => RideDetailsScreen(
-                      rideDoc: doc,
-                    ),
-                  ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: Colors.black,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              child: const Text(
-                "Open Ride Details",
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          )
-        ],
-      ),
+  Widget _infoItem(IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, color: Colors.white54, size: 16),
+        const SizedBox(width: 6),
+        Text(
+          text,
+          style: const TextStyle(color: Colors.white70, fontSize: 13),
+        ),
+      ],
     );
-  }
-
-  /* ---------------- GROUPING ---------------- */
-
-  Map<String, List<QueryDocumentSnapshot>> _groupRidesByDay(
-    List<QueryDocumentSnapshot> rides,
-  ) {
-    final Map<String, List<QueryDocumentSnapshot>> grouped = {};
-
-    final today = DateTime.now();
-    final tomorrow = today.add(const Duration(days: 1));
-
-    for (final ride in rides) {
-      final data = ride.data() as Map<String, dynamic>;
-      final dateStr = data["date"];
-      if (dateStr == null) continue;
-
-      final date = DateTime.parse(dateStr);
-
-      String key;
-      if (_isSameDay(date, today)) {
-        key = "Today";
-      } else if (_isSameDay(date, tomorrow)) {
-        key = "Tomorrow";
-      } else {
-        key = "${date.day}/${date.month}/${date.year}";
-      }
-
-      grouped.putIfAbsent(key, () => []).add(ride);
-    }
-
-    return grouped;
-  }
-
-  bool _isSameDay(DateTime a, DateTime b) {
-    return a.year == b.year &&
-        a.month == b.month &&
-        a.day == b.day;
-  }
-
-  /* ---------------- END TIME ---------------- */
-
-  static String _calculateEndTime(Map<String, dynamic> ride) {
-    try {
-      final start = ride["time"]; // "7:02 PM"
-      final duration = ride["duration"]; // "7h 36m"
-
-      if (start == null || duration == null) return "--";
-
-      final startParts = start.split(" ");
-      final timeParts = startParts[0].split(":");
-      int hour = int.parse(timeParts[0]);
-      final int minute = int.parse(timeParts[1]);
-      final bool isPm = startParts[1] == "PM";
-
-      if (isPm && hour != 12) hour += 12;
-      if (!isPm && hour == 12) hour = 0;
-
-      final h = int.parse(duration.split("h")[0]);
-      final m =
-          int.parse(duration.split("h")[1].replaceAll("m", "").trim());
-
-      final startDate = DateTime(2024, 1, 1, hour, minute);
-      final endDate =
-          startDate.add(Duration(hours: h, minutes: m));
-
-      final displayHour =
-          endDate.hour > 12 ? endDate.hour - 12 : endDate.hour;
-      final suffix = endDate.hour >= 12 ? "PM" : "AM";
-
-      return "${displayHour == 0 ? 12 : displayHour}:${endDate.minute.toString().padLeft(2, '0')} $suffix";
-    } catch (_) {
-      return "--";
-    }
   }
 }

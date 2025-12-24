@@ -213,6 +213,30 @@ class _BookRideScreenState extends State<BookRideScreen>
       for (final doc in snapshot.docs) {
         final ride = doc.data() as Map<String, dynamic>;
 
+        // Filter by time: show only rides >= (now - 1 hour)
+        try {
+          final dateStr = ride['date'] as String?;
+          final timeStr = ride['time'] as String?;
+
+          if (dateStr != null && timeStr != null) {
+            final date = DateFormat("yyyy-MM-dd").parse(dateStr);
+            DateTime rideDt = DateTime(date.year, date.month, date.day);
+
+            final cleanTime = timeStr.replaceAll('\u202F', ' ');
+            DateTime t;
+            try {
+              t = DateFormat("h:mm a").parse(cleanTime);
+            } catch (_) {
+              t = DateFormat("HH:mm").parse(cleanTime);
+            }
+            rideDt = rideDt.add(Duration(hours: t.hour, minutes: t.minute));
+
+            if (rideDt.isBefore(DateTime.now().subtract(const Duration(hours: 1)))) {
+              continue;
+            }
+          }
+        } catch (_) {}
+
         final double? rFromLat = (ride["fromLat"] as num?)?.toDouble();
         final double? rFromLng = (ride["fromLng"] as num?)?.toDouble();
         final double? rToLat = (ride["toLat"] as num?)?.toDouble();
