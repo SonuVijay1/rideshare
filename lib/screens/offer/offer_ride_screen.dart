@@ -361,7 +361,14 @@ class _OfferRideScreenState extends State<OfferRideScreen>
     setState(() => isPublishing = true);
 
     try {
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? "demoUser";
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Please login to publish a ride")),
+        );
+        return;
+      }
+      final uid = user.uid;
 
       final collection = FirebaseFirestore.instance
           .collection("users")
@@ -453,7 +460,12 @@ class _OfferRideScreenState extends State<OfferRideScreen>
     setState(() => isPublishing = true);
 
     try {
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? "demoUser";
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please login to continue")));
+        return;
+      }
+      final uid = user.uid;
       final firestore = FirebaseFirestore.instance;
       final rideRef = firestore.collection("users").doc(uid).collection("driverTrips").doc(widget.rideId);
 

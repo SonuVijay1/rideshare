@@ -10,7 +10,20 @@ class TripHistoryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? "demoUser";
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF121212),
+        body: Center(
+          child: Text("Please login to view your trips",
+              style: TextStyle(color: Colors.white70, fontSize: 16)),
+        ),
+      );
+    }
+    print('AUTH UID: ${user.uid}');
+    print('AUTH PHONE: ${user.phoneNumber}');
+    final uid = user.uid;
     final userDocRef = FirebaseFirestore.instance.collection("users").doc(uid);
 
     return StreamBuilder<QuerySnapshot>(
@@ -122,7 +135,8 @@ class _TripsList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? "demoUser";
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return const SizedBox.shrink();
 
     // Assuming 'driverTrips' for offered rides and 'bookedTrips' for booked rides
     final collectionName = isOffered ? "driverTrips" : "bookedTrips";

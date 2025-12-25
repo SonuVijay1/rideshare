@@ -1,335 +1,529 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 
-class AccountScreen extends StatelessWidget {
+class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
 
   @override
+  State<AccountScreen> createState() => _AccountScreenState();
+}
+
+class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserver {
+  String? uid;
+
+  DateTime? _lastVerificationSentTime;
+  bool _isSendingEmail = false;
+
+  @override
+  void initState() {
+    super.initState();
+    uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      WidgetsBinding.instance.addObserver(this);
+      _reloadUser();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _reloadUser();
+    }
+  }
+
+  Future<void> _reloadUser() async {
+    try {
+      await FirebaseAuth.instance.currentUser?.reload();
+    } catch (e) {
+      // Ignore Pigeon/serialization errors on Android
+    }
+
+    // Sync Firestore if Auth email is verified
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null && user.emailVerified && user.email != null) {
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'email': user.email, // This is the verified email from Auth
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+    }
+
+    if (mounted) setState(() {}); 
+  }
+
+  Future<void> _sendVerificationEmail(String email) async {
+    if (_isSendingEmail) return;
+    
+    // Debounce: Don't send if sent in last 60 seconds
+    if (_lastVerificationSentTime != null && 
+        DateTime.now().difference(_lastVerificationSentTime!).inSeconds < 60) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please wait a minute before resending verification email."))
+      );
+      return;
+    }
+
+    setState(() => _isSendingEmail = true);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      await user.verifyBeforeUpdateEmail(
+  email,
+  ActionCodeSettings(
+    url: "https://rideshare-24f8c.firebaseapp.com/__/auth/action",
+    handleCodeInApp: true, // IMPORTANT because user may verify on same device
+  ),
+);
+      _lastVerificationSentTime = DateTime.now();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Verification email sent to $email. Please check your inbox."))
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        if (e.code == 'requires-recent-login') {
+           _showReLoginDialog();
+        } else {
+           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: ${e.message}")));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      }
+    } finally {
+      if (mounted) setState(() => _isSendingEmail = false);
+    }
+  }
+
+  void _showReLoginDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text("Security Update", style: TextStyle(color: Colors.white)),
+        content: const Text(
+          "To update your email, you need to have signed in recently. Please log out and sign in again.",
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await FirebaseAuth.instance.signOut();
+              if (context.mounted) {
+                 Navigator.pushNamedAndRemoveUntil(context, "/login", (route) => false);
+              }
+            },
+            child: const Text("Log Out", style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showUpdateEmailDialog() {
+    final emailC = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text("Update Email", style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("Enter your email address. We will send a verification link.", style: TextStyle(color: Colors.white70)),
+            const SizedBox(height: 16),
+            _input("Email", emailC),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+          TextButton(
+            onPressed: () async {
+              if (emailC.text.trim().isEmpty) return;
+              Navigator.pop(context);
+              _sendVerificationEmail(emailC.text.trim());
+            },
+            child: const Text("Verify", style: TextStyle(color: Colors.blueAccent)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _uploadFile(String path, String storagePath) async {
+    try {
+      final ref = FirebaseStorage.instance.ref(storagePath);
+      final upload = await ref.putFile(File(path));
+      return await upload.ref.getDownloadURL();
+    } catch (e) {
+      debugPrint("UPLOAD ERROR: $e");
+      return null;
+    }
+  }
+
+  Future<void> _pickAndUpload(String fieldName, String storageFolder) async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+
+    if (picked == null) return;
+
+    final url =
+        await _uploadFile(picked.path, "users/$uid/$storageFolder/${DateTime.now()}");
+
+    if (url == null) return;
+
+    await FirebaseFirestore.instance.collection("users").doc(uid).set({
+      fieldName: url
+    }, SetOptions(merge: true));
+  }
+
+  double _profileCompletion(Map<String, dynamic> d) {
+    int done = 0;
+    if (d['name'] != null) done++;
+    if (d['email'] != null) done++;
+    if (d['gender'] != null) done++;
+    if (d['age'] != null) done++;
+    if (d['city'] != null) done++;
+    if (d['profilePic'] != null) done++;
+    if (d['aadhaarUrl'] != null) done++;
+    if (d['licenseUrl'] != null) done++;
+    if (d['emergencyName'] != null) done++;
+    if (d['dob'] != null) done++;
+
+    return (done / 10.0).clamp(0, 1);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // In future, when auth is added, this will use the real UID.
-    final userId = FirebaseAuth.instance.currentUser?.uid ?? 'demoUser';
-
-    final userDocStream = FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .snapshots();
-
+    if (uid == null) {
+      // This can happen during the logout transition.
+      // Return an empty, themed scaffold to avoid visual glitches.
+      return const Scaffold(
+        backgroundColor: Color(0xFF121212),
+        body: Center(child: CircularProgressIndicator(color: Colors.white)),
+      );
+    }
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       body: SafeArea(
         child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          stream: userDocStream,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(color: Colors.white),
-              );
-            }
+            stream: FirebaseFirestore.instance
+                .collection("users")
+                .doc(uid!)
+                .snapshots(),
+            builder: (context, snap) {
+              final data =
+                  snap.hasData && snap.data!.exists ? snap.data!.data()! : {};
 
-            if (snapshot.hasError) {
-              return Center(
-                child: Text(
-                  'Error: ${snapshot.error}',
-                  style: const TextStyle(color: Colors.white),
-                ),
-              );
-            }
+              final name = data['name'] ?? "New User";
+              final authPhone = FirebaseAuth.instance.currentUser?.phoneNumber;
+final phone = (authPhone != null && authPhone.isNotEmpty)
+    ? authPhone
+    : (data['phone'] ?? "Not Added");
+              final email = data['email'] ?? "Not Added";
+              final city = data['city'] ?? "Not Added";
+              final gender = data['gender'] ?? "Not Specified";
+              final age = data['age']?.toString() ?? "--";
+              final dob = data['dob'] ?? "Not Added";
 
-            if (!snapshot.hasData || !snapshot.data!.exists) {
-              return const Center(
-                child: Text(
-                  'No account data found.\nCreate users/demoUser in Firestore.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white70),
-                ),
-              );
-            }
+              final createdAt = data['createdAt'] as Timestamp?;
+              final joined = createdAt != null
+                  ? DateFormat("MMM yyyy").format(createdAt.toDate())
+                  : "Unknown";
 
-            final data = snapshot.data!.data() ?? {};
+              final ridesTaken = data['ridesTaken'] ?? 0;
+              final ridesOffered = data['ridesOffered'] ?? 0;
+              final pRating = (data['passengerRating'] as num?)?.toDouble() ?? 0.0;
+              final dRating = (data['driverRating'] as num?)?.toDouble() ?? 0.0;
 
-            final name = (data['name'] as String?) ?? 'Guest User';
-            final phone = (data['phone'] as String?) ?? 'No phone';
-            final passengerRating =
-                (data['passengerRating'] as num?)?.toDouble() ?? 0.0;
-            final ridesTaken = (data['ridesTaken'] as num?)?.toInt() ?? 0;
-            final amountSaved =
-                (data['amountSaved'] as num?)?.toDouble() ?? 0.0;
+              final pic = data['profilePic'];
+              final aadhaar = data['aadhaarUrl'];
+              final license = data['licenseUrl'];
+              final aadhaarVerified = data['aadhaarVerified'] == true;
+              final licenseVerified = data['licenseVerified'] == true;
 
-            final driverRating =
-                (data['driverRating'] as num?)?.toDouble() ?? 0.0;
-            final ridesOffered =
-                (data['ridesOffered'] as num?)?.toInt() ?? 0;
-            final amountEarned =
-                (data['amountEarned'] as num?)?.toDouble() ?? 0.0;
+              final safeData = Map<String, dynamic>.from(data);
+              final verified = safeData['verified'] == true;
+              final completion = _profileCompletion(safeData);
 
-            final initials = _getInitials(name);
 
-            return Column(
-              children: [
-                // ---------- HEADER ----------
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(24),
-                  decoration: const BoxDecoration(
-                    color: Colors.black,
-                    borderRadius: BorderRadius.vertical(
-                      bottom: Radius.circular(30),
+              return Column(
+                children: [
+                  // HEADER
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(24),
+                    decoration: const BoxDecoration(
+                      color: Colors.black,
+                      borderRadius:
+                          BorderRadius.vertical(bottom: Radius.circular(30)),
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Title row
-                      Row(
-                        children: [
-                          const Text(
-                            "Account",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const Spacer(),
-                          IconButton(
-                            onPressed: () {
-                              // later: open settings
-                            },
-                            icon: const Icon(
-                              Icons.settings,
-                              color: Colors.white,
-                            ),
-                          )
-                        ],
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      // Profile block
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 32,
-                            backgroundColor: Colors.deepPurple,
-                            child: Text(
-                              initials,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                name,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                phone,
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const Spacer(),
-                          TextButton(
-                            onPressed: () {
-                              // later: navigate to Edit Profile
-                            },
-                            child: const Text(
-                              "Edit",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          )
-                        ],
-                      ),
-
-                      const SizedBox(height: 20),
-                    ],
-                  ),
-                ),
-
-                // ---------- BODY ----------
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
                     child: Column(
                       children: [
-                        // Passenger stats card
-                        _statsCard(
-                          title: "Passenger Stats",
-                          rating: passengerRating,
-                          rides: ridesTaken,
-                          moneyLabel: "Amount Saved",
-                          moneyValue: amountSaved,
-                          icon: Icons.person_outline,
+                        Row(
+                          children: [
+                            Text(
+                              "Account",
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.bold),
+                            ),
+                            const Spacer(),
+                            if (verified)
+                              const Icon(Icons.verified,
+                                  color: Colors.blueAccent),
+                          ],
                         ),
-                        const SizedBox(height: 16),
-
-                        // Driver stats card
-                        _statsCard(
-                          title: "Driver Stats",
-                          rating: driverRating,
-                          rides: ridesOffered,
-                          moneyLabel: "Amount Earned",
-                          moneyValue: amountEarned,
-                          icon: Icons.directions_car,
-                        ),
-                        const SizedBox(height: 24),
-
-                        // Menu items
-                        _menuItem(
-                          icon: Icons.edit,
-                          label: "Edit Profile",
-                          onTap: () {
-                            // TODO: navigate to Edit Profile
-                          },
-                        ),
-                        _menuItem(
-                          icon: Icons.history,
-                          label: "Trip History",
-                          onTap: () {
-                            // TODO: navigate to Trips screen
-                          },
-                        ),
-                        _menuItem(
-                          icon: Icons.payment,
-                          label: "Payment Methods",
-                          onTap: () {
-                            // TODO
-                          },
-                        ),
-                        _menuItem(
-                          icon: Icons.place,
-                          label: "Saved Locations",
-                          onTap: () {
-                            // TODO
-                          },
-                        ),
-                        _menuItem(
-                          icon: Icons.help_outline,
-                          label: "Help & Support",
-                          onTap: () {
-                            // TODO
-                          },
-                        ),
-                        _menuItem(
-                          icon: Icons.info_outline,
-                          label: "About App",
-                          onTap: () {
-                            // TODO
-                          },
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Logout
-                        _logoutButton(onTap: () {
-                          // later: FirebaseAuth.instance.signOut();
-                        }),
                         const SizedBox(height: 20),
+
+                        Row(
+                          children: [
+                            GestureDetector(
+                              onTap: () =>
+                                  _pickAndUpload("profilePic", "profile"),
+                              child: CircleAvatar(
+                                radius: 35,
+                                backgroundImage:
+                                    pic != null ? NetworkImage(pic) : null,
+                                backgroundColor: Colors.deepPurple,
+                                child: pic == null
+                                    ? Text(
+                                        name.isNotEmpty
+                                            ? name[0].toUpperCase()
+                                            : "?",
+                                        style: const TextStyle(
+                                            color: Colors.white, fontSize: 26),
+                                      )
+                                    : null,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(name,
+                                    style: const TextStyle(
+                                        color: Colors.white, fontSize: 18)),
+                                Text(phone,
+                                    style: const TextStyle(
+                                        color: Colors.white54)),
+                                const SizedBox(height: 4),
+                                Text("Joined $joined",
+                                    style: const TextStyle(
+                                        color: Colors.white38, fontSize: 12)),
+                              ],
+                            ),
+                            const Spacer(),
+                            TextButton(
+                                onPressed: () =>
+                                    _openEditProfileSheet(context, safeData),
+                                child: const Text("Edit",
+                                    style: TextStyle(color: Colors.white)))
+                          ],
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        LinearProgressIndicator(
+                          value: completion,
+                          color: Colors.greenAccent,
+                          backgroundColor: Colors.white10,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "Profile Completion ${(completion * 100).round()}%",
+                          style: const TextStyle(
+                              color: Colors.white54, fontSize: 12),
+                        )
                       ],
                     ),
                   ),
-                ),
-              ],
-            );
-          },
-        ),
+
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        children: [
+                          _statsCard(ridesTaken, ridesOffered, pRating, dRating),
+                          const SizedBox(height: 20),
+
+                          _tile("Date of Birth", dob),
+                          _mobileTile(phone),
+                          _emailTile(email), // Pass Firestore email as fallback
+                          _tile("Gender", gender),
+                          _tile("Age", age),
+                          _tile("City", city),
+
+                          const SizedBox(height: 20),
+
+                          // DOCUMENTS
+                          section("Identity Verification"),
+                          _docButton(
+                              "Upload Aadhaar", aadhaar, "aadhaarUrl", "aadhaar", aadhaarVerified),
+                          _docButton("Upload Driving License", license,
+                              "licenseUrl", "license", licenseVerified),
+
+                          const SizedBox(height: 20),
+
+                          section("Emergency Contact"),
+                          _emergencyTile(safeData),
+
+                          const SizedBox(height: 25),
+
+                          _logoutButton(() async {
+                            await FirebaseAuth.instance.signOut();
+                            if (context.mounted) {
+                              Navigator.pushNamedAndRemoveUntil(
+                                  context, "/login", (route) => false);
+                            }
+                          }),
+                          const SizedBox(height: 25),
+                        ],
+                      ),
+                    ),
+                  )
+                ],
+              );
+            }),
       ),
     );
   }
 
-  // ---------- helpers ----------
+  // UI HELPERS
 
-  static String _getInitials(String name) {
-    final parts = name.trim().split(' ');
-    if (parts.length == 1) {
-      return parts.first.isNotEmpty
-          ? parts.first[0].toUpperCase()
-          : '?';
-    }
-    final first = parts[0].isNotEmpty ? parts[0][0] : '';
-    final last = parts.last.isNotEmpty ? parts.last[0] : '';
-    final result = (first + last).toUpperCase();
-    return result.isEmpty ? '?' : result;
+  Widget _tile(String t, String v) => Container(
+        padding: const EdgeInsets.all(14),
+        margin: const EdgeInsets.only(bottom: 8),
+        decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(12)),
+        child: Row(
+          children: [
+            Text(t, style: const TextStyle(color: Colors.white54)),
+            const Spacer(),
+            Text(v, style: const TextStyle(color: Colors.white)),
+          ],
+        ),
+      );
+
+  Widget _emailTile(String firestoreEmail) {
+    final user = FirebaseAuth.instance.currentUser;
+    final authEmail = user?.email;
+    final hasAuthEmail = authEmail != null && authEmail.isNotEmpty;
+    
+    final displayEmail = hasAuthEmail ? authEmail : (firestoreEmail == "Not Added" ? "Not Added" : firestoreEmail);
+    final isVerified = hasAuthEmail && (user?.emailVerified ?? false);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+          color: const Color(0xFF1E1E1E),
+          borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        children: [
+          const Text("Email", style: TextStyle(color: Colors.white54)),
+          const Spacer(),
+          Text(displayEmail!, style: const TextStyle(color: Colors.white)),
+          const SizedBox(width: 8),
+          if (isVerified) ...[
+            const Icon(Icons.verified, color: Colors.greenAccent, size: 18)
+          ] else if (hasAuthEmail) ...[
+            GestureDetector(
+              onTap: () async {
+                await user?.reload();
+                if (user?.emailVerified ?? false) {
+                  setState(() {});
+                } else {
+                  await user?.sendEmailVerification();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Verification email sent.")));
+                  }
+                }
+              },
+              child: const Text("Verify", style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+            )
+          ] else ...[
+            GestureDetector(
+              onTap: _showUpdateEmailDialog,
+              child: const Text("Add Email", style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+            )
+          ],
+          if (hasAuthEmail) ...[
+            const SizedBox(width: 12),
+            GestureDetector(
+              onTap: _showUpdateEmailDialog, // Re-use link dialog which handles update if already linked
+              child: const Icon(Icons.edit, color: Colors.white70, size: 18),
+            ),
+          ]
+        ],
+      ),
+    );
   }
 
-  Widget _statsCard({
-    required String title,
-    required double rating,
-    required int rides,
-    required String moneyLabel,
-    required double moneyValue,
-    required IconData icon,
-  }) {
+  Widget _mobileTile(String phone) {
     return Container(
-      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+          color: const Color(0xFF1E1E1E),
+          borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        children: [
+          const Text("Mobile", style: TextStyle(color: Colors.white54)),
+          const Spacer(),
+          Text(phone, style: const TextStyle(color: Colors.white)),
+          const SizedBox(width: 8),
+          const Icon(Icons.verified, color: Colors.greenAccent, size: 18),
+        ],
+      ),
+    );
+  }
+
+  Widget _statsCard(int taken, int offered, double pRate, double dRate) {
+    return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.35),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // title row
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              Icon(icon, color: Colors.white70),
-              const SizedBox(width: 8),
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              _statItem("Rides Taken", "$taken"),
+              _statItem("Rides Offered", "$offered"),
             ],
           ),
-          const SizedBox(height: 12),
-
+          const Divider(color: Colors.white10, height: 24),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _statItem(
-                label: "Rating",
-                value: rating == 0 ? "--" : rating.toStringAsFixed(1),
-                icon: Icons.star,
-              ),
-              _statItem(
-                label: "Rides",
-                value: rides.toString(),
-                icon: Icons.directions_car_filled_outlined,
-              ),
-              _statItem(
-                label: moneyLabel,
-                value: "₹${moneyValue.toStringAsFixed(0)}",
-                icon: Icons.currency_rupee,
-              ),
+              _statItem("Psngr Rating", pRate.toStringAsFixed(1),
+                  icon: Icons.star, iconColor: Colors.amber),
+              _statItem("Driver Rating", dRate.toStringAsFixed(1),
+                  icon: Icons.star, iconColor: Colors.amber),
             ],
           ),
         ],
@@ -337,85 +531,246 @@ class AccountScreen extends StatelessWidget {
     );
   }
 
-  Widget _statItem({
-    required String label,
-    required String value,
-    required IconData icon,
-  }) {
+  Widget _statItem(String label, String value,
+      {IconData? icon, Color? iconColor}) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: Colors.white54),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white54,
-                fontSize: 12,
-              ),
-            ),
+            if (icon != null) Icon(icon, size: 16, color: iconColor),
+            if (icon != null) const SizedBox(width: 4),
+            Text(value,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold)),
           ],
         ),
         const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        Text(label,
+            style: const TextStyle(color: Colors.white54, fontSize: 12)),
       ],
     );
   }
 
-  Widget _menuItem({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: ListTile(
-        leading: Icon(icon, color: Colors.white70),
-        title: Text(
-          label,
-          style: const TextStyle(color: Colors.white),
+  Widget section(String t) => Align(
+        alignment: Alignment.centerLeft,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(t,
+              style: const TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.bold)),
         ),
-        trailing: const Icon(Icons.chevron_right, color: Colors.white38),
-        onTap: onTap,
+      );
+
+  Widget _docButton(String title, String? url, String field, String folder, bool isVerified) {
+    return ListTile(
+      tileColor: const Color(0xFF1E1E1E),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      title: Text(title, style: const TextStyle(color: Colors.white)),
+      subtitle: Text(
+        url == null ? "Not Uploaded" : (isVerified ? "Verified" : "Pending Verification"),
+        style: TextStyle(color: url == null ? Colors.red : (isVerified ? Colors.greenAccent : Colors.orangeAccent)),
       ),
+      trailing: isVerified ? const Icon(Icons.verified, color: Colors.greenAccent) : const Icon(Icons.upload, color: Colors.white),
+      onTap: () => _pickAndUpload(field, folder),
     );
   }
 
-  Widget _logoutButton({required VoidCallback onTap}) {
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton(
-        style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: Colors.redAccent),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-        onPressed: onTap,
-        child: const Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
-          child: Text(
-            "Logout",
-            style: TextStyle(
-              color: Colors.redAccent,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ),
+  Widget _emergencyTile(Map<String, dynamic> d) {
+    return ListTile(
+      tileColor: const Color(0xFF1E1E1E),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      title: const Text("Emergency Contact",
+          style: TextStyle(color: Colors.white)),
+      subtitle: Text(
+          d['emergencyName'] == null
+              ? "Not Added"
+              : "${d['emergencyName']} (${d['emergencyPhone']})",
+          style: const TextStyle(color: Colors.white54)),
+      trailing: const Icon(Icons.phone, color: Colors.white),
+      onTap: () => _addEmergency(),
     );
   }
+
+  Future<void> _addEmergency() async {
+    final name = TextEditingController();
+    final phone = TextEditingController();
+
+    showDialog(
+        context: context,
+        builder: (c) => AlertDialog(
+              backgroundColor: const Color(0xFF1E1E1E),
+              title: const Text("Emergency Contact",
+                  style: TextStyle(color: Colors.white)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _input("Name", name),
+                  const SizedBox(height: 10),
+                  _input("Phone", phone)
+                ],
+              ),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(c),
+                    child: const Text("Cancel")),
+                TextButton(
+                    onPressed: () async {
+                      await FirebaseFirestore.instance
+                          .collection("users")
+                          .doc(uid)
+                          .set({
+                        "emergencyName": name.text.trim(),
+                        "emergencyPhone": phone.text.trim()
+                      }, SetOptions(merge: true));
+
+                      // verified only if aadhaar + license + emergency
+                      Navigator.pop(c);
+                    },
+                    child: const Text("Save"))
+              ],
+            ));
+  }
+
+  Widget _input(String t, TextEditingController c) => TextField(
+        controller: c,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+            labelText: t,
+            labelStyle: const TextStyle(color: Colors.white54),
+            filled: true,
+            fillColor: Colors.black,
+            border:
+                OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+      );
+
+  Widget _logoutButton(VoidCallback onTap) => SizedBox(
+        width: double.infinity,
+        child: OutlinedButton(
+            style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Colors.redAccent),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14))),
+            onPressed: onTap,
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text("Logout",
+                  style: TextStyle(
+                      color: Colors.redAccent,
+                      fontWeight: FontWeight.bold)),
+            )),
+      );
+
+  void _openEditProfileSheet(BuildContext context, Map<String, dynamic> d) {
+    if (uid == null) return;
+    final n = TextEditingController(text: d['name'] ?? "");
+    final c = TextEditingController(text: d['city'] ?? "");
+    final a = TextEditingController(text: d['age']?.toString() ?? "");
+    final dobC = TextEditingController(text: d['dob'] ?? "");
+
+    String gender = d['gender'] ?? "Male";
+
+    showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: const Color(0xFF1E1E1E),
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+        builder: (context) {
+          return Padding(
+              padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                  left: 20,
+                  right: 20,
+                  top: 20),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const Text("Edit Profile",
+                    style: TextStyle(color: Colors.white, fontSize: 18)),
+                const SizedBox(height: 20),
+                _input("Name", n),
+                const SizedBox(height: 10),
+                GestureDetector(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: DateTime.now()
+                          .subtract(const Duration(days: 365 * 18)),
+                      firstDate: DateTime(1900),
+                      lastDate: DateTime.now(),
+                      builder: (context, child) => Theme(
+                        data: Theme.of(context).copyWith(
+                          colorScheme: const ColorScheme.dark(
+                              primary: Colors.white, onSurface: Colors.white),
+                          dialogBackgroundColor: const Color(0xFF1E1E1E),
+                        ),
+                        child: child!,
+                      ),
+                    );
+                    if (picked != null) {
+                      dobC.text = DateFormat("yyyy-MM-dd").format(picked);
+                    }
+                  },
+                  child: AbsorbPointer(child: _input("Date of Birth", dobC)),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField(
+                    value: gender,
+                    dropdownColor: Colors.black,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: _dec("Gender"),
+                    items: const [
+                      DropdownMenuItem(
+                          value: "Male",
+                          child: Text("Male",
+                              style: TextStyle(color: Colors.white))),
+                      DropdownMenuItem(
+                          value: "Female",
+                          child: Text("Female",
+                              style: TextStyle(color: Colors.white))),
+                      DropdownMenuItem(
+                          value: "Other",
+                          child: Text("Other",
+                              style: TextStyle(color: Colors.white))),
+                    ],
+                    onChanged: (v) => gender = v!),
+                const SizedBox(height: 10),
+                _input("Age", a),
+                const SizedBox(height: 10),
+                _input("City", c),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black),
+                    onPressed: () async {
+                      await FirebaseFirestore.instance
+                          .collection("users")
+                          .doc(uid!)
+                          .set({
+                        "name": n.text.trim(),
+                        "gender": gender,
+                        "city": c.text.trim(),
+                        "age": int.tryParse(a.text.trim()),
+                        "dob": dobC.text.trim(),
+                      }, SetOptions(merge: true));
+
+                      if (context.mounted) Navigator.pop(context);
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: Text("Save"),
+                    ))
+              ]));
+        });
+  }
+
+  InputDecoration _dec(String t) => InputDecoration(
+      labelText: t,
+      labelStyle: const TextStyle(color: Colors.white54),
+      filled: true,
+      fillColor: Colors.black,
+      border:
+          OutlineInputBorder(borderRadius: BorderRadius.circular(12)));
 }

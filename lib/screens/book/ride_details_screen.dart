@@ -140,7 +140,13 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
 
     setState(() => isBooking = true);
     try {
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? "demoUser";
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Please login to book")));
+        return;
+      }
+      final uid = user.uid;
 
       // Fetch user name for booking record
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
@@ -253,7 +259,9 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
 
     setState(() => isBooking = true);
     try {
-        final uid = FirebaseAuth.instance.currentUser?.uid ?? "demoUser";
+        final user = FirebaseAuth.instance.currentUser;
+        if (user == null) return;
+        final uid = user.uid;
         final userBookingRef = FirebaseFirestore.instance.collection('users').doc(uid).collection('bookedTrips').doc(effectiveBookingId);
 
         await FirebaseFirestore.instance.runTransaction((transaction) async {
@@ -320,7 +328,7 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
             ? snapshot.data!.data() as Map<String, dynamic>
             : widget.rideData;
 
-        final uid = FirebaseAuth.instance.currentUser?.uid ?? "demoUser";
+        final uid = FirebaseAuth.instance.currentUser?.uid;
         final bookedUsers = (data['bookedUsers'] as List<dynamic>?)
                 ?.map((e) => e as Map<String, dynamic>)
                 .toList() ??
@@ -330,7 +338,7 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
         final effectiveBookedSeats = widget.existingBookedSeats ?? _localBookedSeats;
 
         // Check if already booked (only for new bookings)
-        final isAlreadyBooked = effectiveBookingId == null &&
+        final isAlreadyBooked = uid != null && effectiveBookingId == null &&
             bookedUsers.any((u) => u['uid'] == uid);
 
         final int currentSeatsAvailable = data['seatsAvailable'] ?? 0;
@@ -344,6 +352,9 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
 
         final bool isFullyBooked = effectiveMaxSeats <= 0;
         final bool canBook = !isBooking && !isAlreadyBooked && !isFullyBooked && selectedSeats <= effectiveMaxSeats;
+        
+        final bool isUpdate = effectiveBookingId != null;
+        final bool hasChanges = !isUpdate || (selectedSeats != (effectiveBookedSeats ?? 0));
 
     // Calculate End Time
     String endTimeStr = "";
@@ -396,6 +407,26 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                                 style: TextStyle(
                                     color: Colors.blueAccent, fontSize: 13),
                               ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (effectiveBookingId != null)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 20),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                              color: Colors.blueAccent.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, color: Colors.blueAccent, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text("You have booked this ride for ${effectiveBookedSeats ?? 0} seat(s).", style: const TextStyle(color: Colors.blueAccent, fontSize: 13)),
                             ),
                           ],
                         ),
@@ -562,10 +593,12 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                     width: double.infinity,
                     height: 55,
                     child: ElevatedButton(
-                      onPressed: canBook ? _bookRide : null,
+                      onPressed: (canBook && hasChanges) ? _bookRide : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
                         foregroundColor: Colors.black,
+                        disabledBackgroundColor: Colors.white24,
+                        disabledForegroundColor: Colors.white38,
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14)),
                       ),

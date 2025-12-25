@@ -1,6 +1,7 @@
-// lib/auth/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'otp_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -10,124 +11,188 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController phoneController = TextEditingController(text: "+91 ");
-  bool _loading = false;
+  final TextEditingController _phoneController = TextEditingController();
+  bool _isLoading = false;
 
-  Future<void> _startPhoneVerification() async {
-    final phone = phoneController.text.trim();
-    if (phone.isEmpty || phone.length < 8) {
+  Future<void> _createFirestoreUser(User user) async {
+    final userRef =
+        FirebaseFirestore.instance.collection('users').doc(user.uid);
+
+    await userRef.set({
+      'uid': user.uid,
+      'phone': user.phoneNumber,
+      'name': 'New User',
+      'createdAt': FieldValue.serverTimestamp(),
+      'ridesTaken': 0,
+      'ridesOffered': 0,
+      'passengerRating': 0.0,
+      'driverRating': 0.0,
+      'amountSaved': 0.0,
+      'amountEarned': 0.0,
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> _sendOtp() async {
+    final phone = _phoneController.text.trim();
+
+    if (phone.isEmpty || phone.length < 10) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid phone number.')),
+        const SnackBar(content: Text("Enter a valid phone number")),
       );
       return;
     }
 
-    setState(() => _loading = true);
+    setState(() => _isLoading = true);
+
+    // Default to +91 if user didn't type +xx
+    String formattedPhone = phone;
+    if (!phone.startsWith('+')) {
+      formattedPhone = "+91$phone";
+    }
+
     try {
       await FirebaseAuth.instance.verifyPhoneNumber(
-        phoneNumber: phone,
+        phoneNumber: formattedPhone,
+
+        /// AUTO VERIFICATION (Android — no OTP screen)
         verificationCompleted: (PhoneAuthCredential credential) async {
-          // Auto-retrieval or instant verification (Android). We still navigate to OTP screen
-          // so that the UX is consistent — the OTP screen can auto-fill.
+          try {
+            final userCredential =
+                await FirebaseAuth.instance.signInWithCredential(credential);
+
+            final user = userCredential.user;
+            if (user != null) {
+              await _createFirestoreUser(user);
+            }
+
+            if (mounted) {
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                '/home',
+                (route) => false,
+              );
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text("Auto login failed: $e")),
+              );
+            }
+          }
         },
+
+        /// VERIFICATION FAILED
         verificationFailed: (FirebaseAuthException e) {
+          setState(() => _isLoading = false);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Phone verification failed: ${e.message}')),
+            SnackBar(content: Text("Verification Failed: ${e.message}")),
           );
         },
+
+        /// OTP SENT — open OTP screen
         codeSent: (String verificationId, int? resendToken) {
-          // go to OTP screen with verificationId and phone
-          Navigator.pushNamed(context, '/otp', arguments: {
-            'verificationId': verificationId,
-            'phone': phone,
-          });
+          setState(() => _isLoading = false);
+
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => OtpScreen(
+                verificationId: verificationId,
+                phoneNumber: formattedPhone,
+              ),
+            ),
+          );
         },
+
+        /// AUTO RETRIEVAL TIMEOUT
         codeAutoRetrievalTimeout: (String verificationId) {
-          // time out; still pass verificationId if needed
+          if (mounted) setState(() => _isLoading = false);
         },
-        timeout: const Duration(seconds: 60),
       );
     } catch (e) {
+      setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error starting phone verification: $e')),
+        SnackBar(content: Text("Error: $e")),
       );
-    } finally {
-      if (mounted) setState(() => _loading = false);
     }
-  }
-
-  @override
-  void dispose() {
-    phoneController.dispose();
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // gradient background to match app theme
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFFF97316), Color(0xFFA855F7)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        padding: const EdgeInsets.all(24),
-        child: Center(
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                const SizedBox(height: 24),
-                const Text(
-                  'Welcome',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 34,
-                    fontWeight: FontWeight.bold,
-                  ),
+      backgroundColor: const Color(0xFF121212),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Spacer(),
+              const Text(
+                "Welcome Back",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
                 ),
-                const SizedBox(height: 32),
-                TextField(
-                  controller: phoneController,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                "Enter your phone number to continue",
+                style: TextStyle(color: Colors.white70, fontSize: 16),
+              ),
+              const SizedBox(height: 40),
+
+              /// PHONE FIELD
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: TextField(
+                  controller: _phoneController,
                   keyboardType: TextInputType.phone,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: 'Phone Number (+91...)',
-                    hintStyle: const TextStyle(color: Colors.white70),
-                    filled: true,
-                    fillColor: Colors.white.withOpacity(0.12),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                  style: const TextStyle(color: Colors.white, fontSize: 18),
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    hintText: "+91 9876543210",
+                    hintStyle: TextStyle(color: Colors.white24),
+                    icon: Icon(Icons.phone, color: Colors.white70),
                   ),
                 ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: _loading ? null : _startPhoneVerification,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+
+              const SizedBox(height: 24),
+
+              /// SEND OTP BUTTON
+              SizedBox(
+                width: double.infinity,
+                height: 55,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _sendOtp,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
                     ),
-                    child: _loading
-                        ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Text('Send OTP'),
                   ),
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.black)
+                      : const Text(
+                          "Send OTP",
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
-                const SizedBox(height: 12),
-                TextButton(
-                  onPressed: () => Navigator.pushNamed(context, '/signup-profile'),
-                  child: const Text('Complete profile later', style: TextStyle(color: Colors.white70)),
-                ),
-              ],
-            ),
+              ),
+
+              const Spacer(flex: 2),
+            ],
           ),
         ),
       ),
