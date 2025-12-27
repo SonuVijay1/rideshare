@@ -348,6 +348,15 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
 
     if (cropped == null) return; // User cancelled crop
 
+    // Fetch old URL to delete later
+    String? oldUrl;
+    try {
+      final doc = await FirebaseFirestore.instance.collection("users").doc(uid).get();
+      oldUrl = doc.data()?[fieldName];
+    } catch (e) {
+      debugPrint("Error fetching old URL: $e");
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Uploading...")),
     );
@@ -368,6 +377,16 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
       {fieldName: url},
       SetOptions(merge: true),
     );
+
+    // Delete old image if exists
+    if (oldUrl != null) {
+      try {
+        await FirebaseStorage.instance.refFromURL(oldUrl).delete();
+        debugPrint("Deleted old image: $oldUrl");
+      } catch (e) {
+        debugPrint("Failed to delete old image: $e");
+      }
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Uploaded successfully")),
@@ -419,9 +438,9 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
 
               final name = data['name'] ?? "New User";
               final authPhone = FirebaseAuth.instance.currentUser?.phoneNumber;
-final phone = (authPhone != null && authPhone.isNotEmpty)
-    ? authPhone
-    : (data['phone'] ?? "Not Added");
+              final phone = (authPhone != null && authPhone.isNotEmpty)
+                    ? authPhone
+                    : (data['phone'] ?? "Not Added");
               final email = data['email'] ?? "Not Added";
               final city = data['city'] ?? "Not Added";
               final gender = data['gender'] ?? "Not Specified";
@@ -543,14 +562,19 @@ final phone = (authPhone != null && authPhone.isNotEmpty)
                   ),
 
                   Expanded(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(18),
-                      child: Column(
-                        children: [
-                          _statsCard(ridesTaken, ridesOffered, pRating, dRating),
-                          const SizedBox(height: 20),
+                    child: RefreshIndicator(
+                      onRefresh: _reloadUser,
+                      color: Colors.white,
+                      backgroundColor: Colors.black,
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          children: [
+                            _statsCard(ridesTaken, ridesOffered, pRating, dRating),
+                            const SizedBox(height: 20),
 
-                          _tile("Date of Birth", dob),
+                            _tile("Date of Birth", dob),
                           _mobileTile(phone),
                           _emailTile(email), // Pass Firestore email as fallback
                           _tile("Gender", gender),
@@ -582,6 +606,7 @@ final phone = (authPhone != null && authPhone.isNotEmpty)
                           }),
                           const SizedBox(height: 25),
                         ],
+                        )
                       ),
                     ),
                   )
@@ -629,9 +654,9 @@ final phone = (authPhone != null && authPhone.isNotEmpty)
           const Spacer(),
           Text(displayEmail!, style: const TextStyle(color: Colors.white)),
           const SizedBox(width: 8),
-          if (isVerified) ...[
+          if (isVerified)
             const Icon(Icons.verified, color: Colors.greenAccent, size: 18)
-          ] else if (hasAuthEmail) ...[
+          else if (hasAuthEmail)
             GestureDetector(
               onTap: () async {
                 await user?.reload();
@@ -646,12 +671,11 @@ final phone = (authPhone != null && authPhone.isNotEmpty)
               },
               child: const Text("Verify", style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12)),
             )
-          ] else ...[
+          else
             GestureDetector(
               onTap: _showUpdateEmailDialog,
               child: const Text("Add Email", style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 12)),
-            )
-          ],
+            ),
           if (hasAuthEmail) ...[
             const SizedBox(width: 12),
             GestureDetector(
@@ -862,13 +886,15 @@ final phone = (authPhone != null && authPhone.isNotEmpty)
         shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
         builder: (context) {
-          return Padding(
-              padding: EdgeInsets.only(
-                  bottom: MediaQuery.of(context).viewInsets.bottom,
-                  left: 20,
-                  right: 20,
-                  top: 20),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
+          return StatefulBuilder(
+            builder: (context, setState) {
+              return Padding(
+                  padding: EdgeInsets.only(
+                      bottom: MediaQuery.of(context).viewInsets.bottom,
+                      left: 20,
+                      right: 20,
+                      top: 20),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
                 const Text("Edit Profile",
                     style: TextStyle(color: Colors.white, fontSize: 18)),
                 const SizedBox(height: 20),
@@ -898,7 +924,7 @@ final phone = (authPhone != null && authPhone.isNotEmpty)
                   child: AbsorbPointer(child: _input("Date of Birth", dobC)),
                 ),
                 const SizedBox(height: 10),
-                DropdownButtonFormField(
+                DropdownButtonFormField<String>(
                     value: gender,
                     dropdownColor: Colors.black,
                     style: const TextStyle(color: Colors.white),
@@ -917,7 +943,7 @@ final phone = (authPhone != null && authPhone.isNotEmpty)
                           child: Text("Other",
                               style: TextStyle(color: Colors.white))),
                     ],
-                    onChanged: (v) => gender = v!),
+                    onChanged: (v) => setState(() => gender = v!)),
                 const SizedBox(height: 10),
                 _input("Age", a),
                 const SizedBox(height: 10),
@@ -946,6 +972,8 @@ final phone = (authPhone != null && authPhone.isNotEmpty)
                       child: Text("Save"),
                     ))
               ]));
+            }
+          );
         });
   }
 
