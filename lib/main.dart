@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 // ---------------------
 // AUTH SCREENS (DISABLED FOR NOW)
 // ---------------------
-// import 'auth/login_screen.dart';
+import 'auth/login_screen.dart';
 // import 'auth/otp_screen.dart';
 // import 'auth/signup_screen.dart';
 
@@ -45,7 +46,7 @@ class RideShareApp extends StatelessWidget {
         // ---------------------
         // AUTH FLOW (DISABLED)
         // ---------------------
-        // '/login': (context) => const LoginScreen(),
+        '/login': (context) => const LoginScreen(),
         // '/otp': (context) => const OtpScreen(),
         // '/signup-profile': (context) => const SignupProfileScreen(),
 
@@ -64,16 +65,6 @@ class Root extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // -----------------------------------------------
-    // AUTH REMOVED — DIRECTLY SHOW MAIN NAVIGATION
-    // -----------------------------------------------
-    return const MainNav();
-
-    // ------------------------------
-    // ORIGINAL AUTH-BASED LOGIC (COMMENTED)
-    // ------------------------------
-
-    /*
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
@@ -96,6 +87,5 @@ class Root extends StatelessWidget {
         return const LoginScreen();
       },
     );
-    */
   }
 }

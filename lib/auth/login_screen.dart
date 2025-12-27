@@ -18,18 +18,31 @@ class _LoginScreenState extends State<LoginScreen> {
     final userRef =
         FirebaseFirestore.instance.collection('users').doc(user.uid);
 
-    await userRef.set({
-      'uid': user.uid,
-      'phone': user.phoneNumber,
-      'name': 'New User',
-      'createdAt': FieldValue.serverTimestamp(),
-      'ridesTaken': 0,
-      'ridesOffered': 0,
-      'passengerRating': 0.0,
-      'driverRating': 0.0,
-      'amountSaved': 0.0,
-      'amountEarned': 0.0,
-    }, SetOptions(merge: true));
+    final snapshot = await userRef.get();
+
+    if (!snapshot.exists) {
+      await userRef.set({
+        'uid': user.uid,
+        'phone': user.phoneNumber,
+        'name': 'New User',
+        'createdAt': FieldValue.serverTimestamp(),
+        'ridesTaken': 0,
+        'ridesOffered': 0,
+        'passengerRating': 0.0,
+        'driverRating': 0.0,
+        'amountSaved': 0.0,
+        'amountEarned': 0.0,
+      });
+    } else {
+      final Map<String, dynamic> updateData = {
+        'uid': user.uid,
+        'phone': user.phoneNumber,
+      };
+      if (user.email != null && user.emailVerified) {
+        updateData['email'] = user.email;
+      }
+      await userRef.set(updateData, SetOptions(merge: true));
+    }
   }
 
   Future<void> _sendOtp() async {

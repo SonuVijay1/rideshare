@@ -120,10 +120,16 @@ class _OtpScreenState extends State<OtpScreen> {
     } else {
       print("ℹ USER ALREADY EXISTS — updating merged data…");
 
-      await userRef.set({
+      final Map<String, dynamic> updateData = {
         'uid': user.uid,
         'phone': user.phoneNumber,
-      }, SetOptions(merge: true));
+      };
+
+      if (user.email != null && user.emailVerified) {
+        updateData['email'] = user.email;
+      }
+
+      await userRef.set(updateData, SetOptions(merge: true));
 
       print("✔ Existing Firestore user updated");
     }
