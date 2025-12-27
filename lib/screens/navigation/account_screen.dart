@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'dart:async';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -268,31 +269,70 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
 }
 
   Future<String?> _uploadFile(String path, String storagePath) async {
-    try {
-      final ref = FirebaseStorage.instance.ref(storagePath);
-      final upload = await ref.putFile(File(path));
-      return await upload.ref.getDownloadURL();
-    } catch (e) {
-      debugPrint("UPLOAD ERROR: $e");
-      return null;
-    }
+  try {
+    debugPrint("🔥 Upload Started");
+    debugPrint("Selected File Path: $path");
+    debugPrint("Upload Target Path: $storagePath");
+
+    // Use default Firebase bucket (recommended)
+    final storage = FirebaseStorage.instance;
+
+    final ref = storage.ref(storagePath);
+
+    // Fix for Android NullPointerException: Explicitly provide metadata
+    final metadata = SettableMetadata(contentType: "image/jpeg");
+
+    final uploadTask = await ref.putFile(File(path), metadata);
+
+    debugPrint("✅ Upload Success");
+    final url = await uploadTask.ref.getDownloadURL();
+    debugPrint("📸 File URL: $url");
+
+    return url;
+  } catch (e) {
+    debugPrint("❌ UPLOAD ERROR: $e");
+    return null;
   }
+}
+
 
   Future<void> _pickAndUpload(String fieldName, String storageFolder) async {
+  try {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
 
     if (picked == null) return;
 
-    final url =
-        await _uploadFile(picked.path, "users/$uid/$storageFolder/${DateTime.now()}");
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Uploading...")),
+    );
 
-    if (url == null) return;
+    final url = await _uploadFile(
+      picked.path,
+      "users/$uid/$storageFolder/${DateTime.now()}",
+    );
 
-    await FirebaseFirestore.instance.collection("users").doc(uid).set({
-      fieldName: url
-    }, SetOptions(merge: true));
+    if (url == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Upload failed")),
+      );
+      return;
+    }
+
+    await FirebaseFirestore.instance.collection("users").doc(uid).set(
+      {fieldName: url},
+      SetOptions(merge: true),
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Uploaded successfully")),
+    );
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Upload error: $e")),
+    );
   }
+}
 
   double _profileCompletion(Map<String, dynamic> d) {
     int done = 0;
