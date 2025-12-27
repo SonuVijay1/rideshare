@@ -62,51 +62,85 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
   }
 
   Future<void> _sendVerificationEmail(String email) async {
-    if (_isSendingEmail) return;
-    
-    // Debounce: Don't send if sent in last 60 seconds
-    if (_lastVerificationSentTime != null && 
-        DateTime.now().difference(_lastVerificationSentTime!).inSeconds < 60) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please wait a minute before resending verification email."))
-      );
+  debugPrint("Attempting to send verification email to: $email");
+
+  if (_isSendingEmail) return;
+
+  // Debounce → avoid spam
+  if (_lastVerificationSentTime != null &&
+      DateTime.now().difference(_lastVerificationSentTime!).inSeconds < 60) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Please wait a minute before resending verification email."))
+    );
+    return;
+  }
+
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) return;
+
+  setState(() => _isSendingEmail = true);
+
+  try {
+    final normalizedEmail = email.trim().toLowerCase();
+
+    // 1️⃣ CHECK FIRESTORE USERS COLLECTION
+    final existing = await FirebaseFirestore.instance
+        .collection("users")
+        .where("email", isEqualTo: normalizedEmail)
+        .limit(1)
+        .get();
+
+    if (existing.docs.isNotEmpty) {
+      debugPrint("Email exists in Firestore → show dialog");
+      _showEmailInUseDialog();
       return;
     }
 
-    setState(() => _isSendingEmail = true);
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    // 2️⃣ CHECK FIREBASE AUTH PROVIDERS
+    final methods = await FirebaseAuth.instance.fetchSignInMethodsForEmail(normalizedEmail);
 
-    try {
-      await user.verifyBeforeUpdateEmail(
-  email,
-  ActionCodeSettings(
-    url: "https://rideshare-24f8c.firebaseapp.com/__/auth/action",
-    handleCodeInApp: true, // IMPORTANT because user may verify on same device
-  ),
-);
-      _lastVerificationSentTime = DateTime.now();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Verification email sent to $email. Please check your inbox."))
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        if (e.code == 'requires-recent-login') {
-           _showReLoginDialog();
-        } else {
-           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: ${e.message}")));
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
-      }
-    } finally {
-      if (mounted) setState(() => _isSendingEmail = false);
+    if (methods.isNotEmpty) {
+      debugPrint("Email exists in Firebase Auth → show dialog");
+      _showEmailInUseDialog();
+      return;
     }
+
+    debugPrint("Email is free. Sending verification…");
+
+    await user.verifyBeforeUpdateEmail(normalizedEmail);
+    _lastVerificationSentTime = DateTime.now();
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text("Verification Sent", style: TextStyle(color: Colors.white)),
+        content: Text(
+          "We sent a verification link to $email.\n\nOpen the email to complete update.",
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("OK", style: TextStyle(color: Colors.blueAccent)),
+          ),
+        ],
+      ),
+    );
+  } on FirebaseAuthException catch (e) {
+    if (e.code == 'requires-recent-login') {
+      _showReLoginDialog();
+    } else {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Error: ${e.message}")));
+    }
+  } finally {
+    if (mounted) setState(() => _isSendingEmail = false);
   }
+}
 
   void _showReLoginDialog() {
     showDialog(
@@ -138,36 +172,100 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
     );
   }
 
-  void _showUpdateEmailDialog() {
-    final emailC = TextEditingController();
-    
+  void _showEmailInUseDialog() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text("Update Email", style: TextStyle(color: Colors.white)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text("Enter your email address. We will send a verification link.", style: TextStyle(color: Colors.white70)),
-            const SizedBox(height: 16),
-            _input("Email", emailC),
-          ],
+        title: const Text("Email Already Linked", style: TextStyle(color: Colors.white)),
+        content: const Text(
+          "This email address is already associated with another account.",
+          style: TextStyle(color: Colors.white70),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
           TextButton(
-            onPressed: () async {
-              if (emailC.text.trim().isEmpty) return;
-              Navigator.pop(context);
-              _sendVerificationEmail(emailC.text.trim());
-            },
-            child: const Text("Verify", style: TextStyle(color: Colors.blueAccent)),
+            onPressed: () => Navigator.pop(context),
+            child: const Text("OK", style: TextStyle(color: Colors.blueAccent)),
           ),
         ],
       ),
     );
   }
+
+  void _showUpdateEmailDialog() {
+  final emailC = TextEditingController();
+
+  bool _isValidEmail(String email) {
+    final regex = RegExp(
+      r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+    );
+    return regex.hasMatch(email.trim());
+  }
+
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      backgroundColor: const Color(0xFF1E1E1E),
+      title: const Text(
+        "Update Email",
+        style: TextStyle(color: Colors.white),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            "Enter your email address. We will send a verification link.",
+            style: TextStyle(color: Colors.white70),
+          ),
+          const SizedBox(height: 16),
+          _input("Email", emailC),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text("Cancel"),
+        ),
+        TextButton(
+          onPressed: () async {
+            final email = emailC.text.trim();
+
+            if (email.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Email cannot be empty")),
+              );
+              return;
+            }
+
+            if (!_isValidEmail(email)) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text("Please enter a valid email address")),
+              );
+              return;
+            }
+
+            if (email == FirebaseAuth.instance.currentUser?.email) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text("This is already your current email.")),
+              );
+              return;
+            }
+
+            Navigator.pop(context);
+            debugPrint("User requested email update to: $email");
+            _sendVerificationEmail(email);
+          },
+          child: const Text(
+            "Verify",
+            style: TextStyle(color: Colors.blueAccent),
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
   Future<String?> _uploadFile(String path, String storagePath) async {
     try {
