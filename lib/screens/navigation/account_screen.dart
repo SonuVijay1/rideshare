@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 
@@ -53,10 +54,17 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
     // Sync Firestore if Auth email is verified
     final user = FirebaseAuth.instance.currentUser;
     if (user != null && user.emailVerified && user.email != null) {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'email': user.email, // This is the verified email from Auth
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        final userRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+        final doc = await userRef.get();
+        final dbEmail = doc.data()?['email'];
+
+        // Only update if the email in DB is missing or different
+        if (dbEmail != user.email) {
+          await userRef.set({
+            'email': user.email,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        }
     }
 
     if (mounted) setState(() {}); 
@@ -299,16 +307,53 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
   Future<void> _pickAndUpload(String fieldName, String storageFolder) async {
   try {
     final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery);
+    // 1. Pick Image with initial compression
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80, // Initial compression to save memory
+      maxWidth: 1024,   // Resize large images immediately
+    );
 
     if (picked == null) return;
+
+    // 2. Crop & Compress
+    final cropped = await ImageCropper().cropImage(
+      sourcePath: picked.path,
+      compressQuality: 70, // High compression for storage optimization
+      maxWidth: 1024,      // Ensure uploaded file isn't huge
+      maxHeight: 1024,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Crop & Upload',
+          toolbarColor: Colors.white, // High contrast toolbar
+          toolbarWidgetColor: Colors.black, // Black icons (Checkmark will be visible)
+          activeControlsWidgetColor: Colors.deepPurple,
+          statusBarColor: Colors.black,
+          initAspectRatio: CropAspectRatioPreset.square, // Default to square for profile
+          lockAspectRatio: false,
+          backgroundColor: Colors.black,
+          dimmedLayerColor: const Color(0x99000000),
+          cropFrameColor: Colors.white,
+          cropGridColor: Colors.white54,
+          hideBottomControls: false,
+          showCropGrid: true,
+        ),
+        IOSUiSettings(
+          title: 'Edit Photo',
+          doneButtonTitle: 'Upload',
+          cancelButtonTitle: 'Cancel',
+        ),
+      ],
+    );
+
+    if (cropped == null) return; // User cancelled crop
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Uploading...")),
     );
 
     final url = await _uploadFile(
-      picked.path,
+      cropped.path,
       "users/$uid/$storageFolder/${DateTime.now()}",
     );
 

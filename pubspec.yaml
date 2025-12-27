@@ -24,6 +24,7 @@ dependencies:
   firebase_app_check: ^0.2.1
   image_picker: ^1.1.1
   app_links: ^5.0.0
+  image_cropper: ^8.0.2
 
 
 flutter:
