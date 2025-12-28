@@ -516,20 +516,36 @@ class _AccountScreenState extends State<AccountScreen>
                             GestureDetector(
                               onTap: () =>
                                   _pickAndUpload("profilePic", "profile"),
-                              child: CircleAvatar(
-                                radius: 35,
-                                backgroundImage:
-                                    pic != null ? NetworkImage(pic) : null,
-                                backgroundColor: Colors.deepPurple,
-                                child: pic == null
-                                    ? Text(
-                                        name.isNotEmpty
-                                            ? name[0].toUpperCase()
-                                            : "?",
-                                        style: const TextStyle(
-                                            color: Colors.white, fontSize: 26),
-                                      )
-                                    : null,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                      color: Colors.blueAccent.withOpacity(0.8),
+                                      width: 2),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.blueAccent.withOpacity(0.4),
+                                      blurRadius: 12,
+                                      spreadRadius: 2,
+                                    ),
+                                  ],
+                                ),
+                                child: CircleAvatar(
+                                  radius: 35,
+                                  backgroundImage:
+                                      pic != null ? NetworkImage(pic) : null,
+                                  backgroundColor: Colors.deepPurple,
+                                  child: pic == null
+                                      ? Text(
+                                          name.isNotEmpty
+                                              ? name[0].toUpperCase()
+                                              : "?",
+                                          style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 26),
+                                        )
+                                      : null,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 16),
