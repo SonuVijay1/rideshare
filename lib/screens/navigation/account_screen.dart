@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'dart:async';
 import '../../repositories/user_repository.dart';
 import '../../repositories/storage_repository.dart';
+import '../profile/profile_screen.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -17,9 +18,6 @@ class AccountScreen extends StatefulWidget {
 class _AccountScreenState extends State<AccountScreen>
     with WidgetsBindingObserver {
   String? uid;
-
-  DateTime? _lastVerificationSentTime;
-  bool _isSendingEmail = false;
 
   final UserRepository _userRepo = FirebaseUserRepository();
   final StorageRepository _storageRepo = FirebaseStorageRepository();
@@ -63,201 +61,6 @@ class _AccountScreenState extends State<AccountScreen>
     }
 
     if (mounted) setState(() {});
-  }
-
-  Future<void> _sendVerificationEmail(String email) async {
-    debugPrint("Attempting to send verification email to: $email");
-
-    if (_isSendingEmail) return;
-
-    // Debounce → avoid spam
-    if (_lastVerificationSentTime != null &&
-        DateTime.now().difference(_lastVerificationSentTime!).inSeconds < 60) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text(
-              "Please wait a minute before resending verification email.")));
-      return;
-    }
-
-    final user = _userRepo.currentUser;
-    if (user == null) return;
-
-    setState(() => _isSendingEmail = true);
-
-    try {
-      final normalizedEmail = email.trim().toLowerCase();
-
-      final inUse = await _userRepo.isEmailInUse(normalizedEmail);
-      if (inUse) {
-        if (mounted) _showEmailInUseDialog();
-        return;
-      }
-
-      debugPrint("Email is free. Sending verification…");
-
-      await _userRepo.verifyBeforeUpdateEmail(normalizedEmail);
-      _lastVerificationSentTime = DateTime.now();
-
-      if (!mounted) return;
-
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          backgroundColor: const Color(0xFF1E1E1E),
-          title: const Text("Verification Sent",
-              style: TextStyle(color: Colors.white)),
-          content: Text(
-            "We sent a verification link to $email.\n\nOpen the email to complete update.",
-            style: const TextStyle(color: Colors.white70),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child:
-                  const Text("OK", style: TextStyle(color: Colors.blueAccent)),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      final err = e as dynamic;
-      if (err.code == 'requires-recent-login') {
-        _showReLoginDialog();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Error: ${err.message ?? err.toString()}")));
-      }
-    } finally {
-      if (mounted) setState(() => _isSendingEmail = false);
-    }
-  }
-
-  void _showReLoginDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text("Security Update",
-            style: TextStyle(color: Colors.white)),
-        content: const Text(
-          "To update your email, you need to have signed in recently. Please log out and sign in again.",
-          style: TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _userRepo.signOut();
-              if (context.mounted) {
-                Navigator.pushNamedAndRemoveUntil(
-                    context, "/login", (route) => false);
-              }
-            },
-            child: const Text("Log Out",
-                style: TextStyle(color: Colors.redAccent)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showEmailInUseDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text("Email Already Linked",
-            style: TextStyle(color: Colors.white)),
-        content: const Text(
-          "This email address is already associated with another account.",
-          style: TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("OK", style: TextStyle(color: Colors.blueAccent)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showUpdateEmailDialog() {
-    final emailC = TextEditingController();
-
-    bool _isValidEmail(String email) {
-      final regex = RegExp(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$");
-      return regex.hasMatch(email.trim());
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text(
-          "Update Email",
-          style: TextStyle(color: Colors.white),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              "Enter your email address. We will send a verification link.",
-              style: TextStyle(color: Colors.white70),
-            ),
-            const SizedBox(height: 16),
-            _input("Email", emailC),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          TextButton(
-            onPressed: () async {
-              final email = emailC.text.trim();
-
-              if (email.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Email cannot be empty")),
-                );
-                return;
-              }
-
-              if (!_isValidEmail(email)) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text("Please enter a valid email address")),
-                );
-                return;
-              }
-
-              if (email == _userRepo.currentUser?.email) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text("This is already your current email.")),
-                );
-                return;
-              }
-
-              Navigator.pop(context);
-              debugPrint("User requested email update to: $email");
-              _sendVerificationEmail(email);
-            },
-            child: const Text(
-              "Verify",
-              style: TextStyle(color: Colors.blueAccent),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   // _uploadFile removed, using _storageRepo.uploadFile
@@ -394,11 +197,6 @@ class _AccountScreenState extends State<AccountScreen>
               final phone = (authPhone != null && authPhone.isNotEmpty)
                   ? authPhone
                   : (data['phone'] ?? "Not Added");
-              final email = data['email'] ?? "Not Added";
-              final city = data['city'] ?? "Not Added";
-              final gender = data['gender'] ?? "Not Specified";
-              final age = data['age']?.toString() ?? "--";
-              final dob = data['dob'] ?? "Not Added";
 
               final createdAt = data['createdAt'];
               final joined = createdAt != null && createdAt is DateTime
@@ -510,8 +308,12 @@ class _AccountScreenState extends State<AccountScreen>
                             ),
                             const Spacer(),
                             TextButton(
-                                onPressed: () =>
-                                    _openEditProfileSheet(context, safeData),
+                                onPressed: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                          builder: (_) =>
+                                              const ProfileScreen()),
+                                    ),
                                 child: const Text("Edit",
                                     style: TextStyle(color: Colors.white)))
                           ],
@@ -609,31 +411,32 @@ class _AccountScreenState extends State<AccountScreen>
                                   cancelStatus),
                               const SizedBox(height: 20),
 
-                              _tile("Date of Birth", dob),
-                              _mobileTile(phone),
-                              _emailTile(
-                                  email), // Pass Firestore email as fallback
-                              _tile("Gender", gender),
-                              _tile("Age", age),
-                              _tile("City", city),
+                              // Personal Profile Link
+                              _tile("Personal Profile", "View & Edit",
+                                  onTap: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                            builder: (_) =>
+                                                const ProfileScreen()),
+                                      )),
 
                               const SizedBox(height: 20),
                               section("Vehicle Details"),
                               _tile("Type", data['vehicleType'] ?? "Not Added",
                                   onTap: () =>
-                                      _openEditProfileSheet(context, safeData)),
+                                      _openEditVehicleSheet(context, safeData)),
                               _tile(
                                   "Model", data['vehicleModel'] ?? "Not Added",
                                   onTap: () =>
-                                      _openEditProfileSheet(context, safeData)),
+                                      _openEditVehicleSheet(context, safeData)),
                               _tile(
                                   "Color", data['vehicleColor'] ?? "Not Added",
                                   onTap: () =>
-                                      _openEditProfileSheet(context, safeData)),
+                                      _openEditVehicleSheet(context, safeData)),
                               _tile("Number",
                                   data['vehicleNumber'] ?? "Not Added",
                                   onTap: () =>
-                                      _openEditProfileSheet(context, safeData)),
+                                      _openEditVehicleSheet(context, safeData)),
 
                               const SizedBox(height: 20),
 
@@ -693,91 +496,6 @@ class _AccountScreenState extends State<AccountScreen>
           ),
         ),
       );
-
-  Widget _emailTile(String firestoreEmail) {
-    final user = _userRepo.currentUser;
-    final authEmail = user?.email;
-    final hasAuthEmail = authEmail != null && authEmail.isNotEmpty;
-
-    final displayEmail = hasAuthEmail
-        ? authEmail
-        : (firestoreEmail == "Not Added" ? "Not Added" : firestoreEmail);
-    final isVerified = hasAuthEmail && (user?.emailVerified ?? false);
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-          color: const Color(0xFF1E1E1E),
-          borderRadius: BorderRadius.circular(12)),
-      child: Row(
-        children: [
-          const Text("Email", style: TextStyle(color: Colors.white54)),
-          const Spacer(),
-          Text(displayEmail!, style: const TextStyle(color: Colors.white)),
-          const SizedBox(width: 8),
-          if (isVerified)
-            const Icon(Icons.verified, color: Colors.greenAccent, size: 18)
-          else if (hasAuthEmail)
-            GestureDetector(
-              onTap: () async {
-                await _userRepo.reloadUser();
-                if (user?.emailVerified ?? false) {
-                  setState(() {});
-                } else {
-                  await _userRepo.sendEmailVerification();
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text("Verification email sent.")));
-                  }
-                }
-              },
-              child: const Text("Verify",
-                  style: TextStyle(
-                      color: Colors.orangeAccent,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12)),
-            )
-          else
-            GestureDetector(
-              onTap: _showUpdateEmailDialog,
-              child: const Text("Add Email",
-                  style: TextStyle(
-                      color: Colors.blueAccent,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12)),
-            ),
-          if (hasAuthEmail) ...[
-            const SizedBox(width: 12),
-            GestureDetector(
-              onTap:
-                  _showUpdateEmailDialog, // Re-use link dialog which handles update if already linked
-              child: const Icon(Icons.edit, color: Colors.white70, size: 18),
-            ),
-          ]
-        ],
-      ),
-    );
-  }
-
-  Widget _mobileTile(String phone) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-          color: const Color(0xFF1E1E1E),
-          borderRadius: BorderRadius.circular(12)),
-      child: Row(
-        children: [
-          const Text("Mobile", style: TextStyle(color: Colors.white54)),
-          const Spacer(),
-          Text(phone, style: const TextStyle(color: Colors.white)),
-          const SizedBox(width: 8),
-          const Icon(Icons.verified, color: Colors.greenAccent, size: 18),
-        ],
-      ),
-    );
-  }
 
   String _calculateCancellationStatus(int taken, int offered, int cancelled) {
     if (cancelled == 0) return "Never";
@@ -1025,23 +743,17 @@ class _AccountScreenState extends State<AccountScreen>
             onPressed: onTap,
             child: const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text("Logout",
+              child: Text("Log Out",
                   style: TextStyle(
                       color: Colors.redAccent, fontWeight: FontWeight.bold)),
             )),
       );
 
-  void _openEditProfileSheet(BuildContext context, Map<String, dynamic> d) {
+  void _openEditVehicleSheet(BuildContext context, Map<String, dynamic> d) {
     if (uid == null) return;
-    final n = TextEditingController(text: d['name'] ?? "");
-    final c = TextEditingController(text: d['city'] ?? "");
-    final a = TextEditingController(text: d['age']?.toString() ?? "");
-    final dobC = TextEditingController(text: d['dob'] ?? "");
     final vm = TextEditingController(text: d['vehicleModel'] ?? "");
     final vn = TextEditingController(text: d['vehicleNumber'] ?? "");
     final vc = TextEditingController(text: d['vehicleColor'] ?? "");
-
-    String gender = d['gender'] ?? "Male";
     String vehicleType = d['vehicleType'] ?? "Car";
 
     showModalBottomSheet(
@@ -1059,60 +771,9 @@ class _AccountScreenState extends State<AccountScreen>
                     right: 20,
                     top: 20),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Text("Edit Profile",
+                  const Text("Edit Vehicle Details",
                       style: TextStyle(color: Colors.white, fontSize: 18)),
                   const SizedBox(height: 20),
-                  _input("Name", n),
-                  const SizedBox(height: 10),
-                  GestureDetector(
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: DateTime.now()
-                            .subtract(const Duration(days: 365 * 18)),
-                        firstDate: DateTime(1900),
-                        lastDate: DateTime.now(),
-                        builder: (context, child) => Theme(
-                          data: Theme.of(context).copyWith(
-                            colorScheme: const ColorScheme.dark(
-                                primary: Colors.white, onSurface: Colors.white),
-                            dialogBackgroundColor: const Color(0xFF1E1E1E),
-                          ),
-                          child: child!,
-                        ),
-                      );
-                      if (picked != null) {
-                        dobC.text = DateFormat("yyyy-MM-dd").format(picked);
-                      }
-                    },
-                    child: AbsorbPointer(child: _input("Date of Birth", dobC)),
-                  ),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<String>(
-                      value: gender,
-                      dropdownColor: Colors.black,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: _dec("Gender"),
-                      items: const [
-                        DropdownMenuItem(
-                            value: "Male",
-                            child: Text("Male",
-                                style: TextStyle(color: Colors.white))),
-                        DropdownMenuItem(
-                            value: "Female",
-                            child: Text("Female",
-                                style: TextStyle(color: Colors.white))),
-                        DropdownMenuItem(
-                            value: "Other",
-                            child: Text("Other",
-                                style: TextStyle(color: Colors.white))),
-                      ],
-                      onChanged: (v) => setState(() => gender = v!)),
-                  const SizedBox(height: 10),
-                  _input("Age", a),
-                  const SizedBox(height: 10),
-                  _input("City", c),
-                  const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
                       value: vehicleType,
                       dropdownColor: Colors.black,
@@ -1143,11 +804,6 @@ class _AccountScreenState extends State<AccountScreen>
                           foregroundColor: Colors.black),
                       onPressed: () async {
                         await _userRepo.updateUserData(uid!, {
-                          "name": n.text.trim(),
-                          "gender": gender,
-                          "city": c.text.trim(),
-                          "age": int.tryParse(a.text.trim()),
-                          "dob": dobC.text.trim(),
                           "vehicleModel": vm.text.trim(),
                           "vehicleNumber": vn.text.trim(),
                           "vehicleColor": vc.text.trim(),

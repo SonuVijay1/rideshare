@@ -20,6 +20,7 @@ abstract class UserRepository {
   Future<void> updateUserData(String uid, Map<String, dynamic> data);
   Future<void> incrementUserStat(String uid, String field, int amount);
   Future<void> reloadUser();
+  Future<void> setLanguageCode(String code);
   Future<void> sendEmailVerification();
   Future<void> verifyBeforeUpdateEmail(String newEmail);
   Future<bool> isEmailInUse(String email);
@@ -84,29 +85,53 @@ class FirebaseUserRepository implements UserRepository {
 
   @override
   Future<void> reloadUser() async {
-    await _auth.currentUser?.reload();
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw FirebaseAuthException(
+          code: 'no-current-user', message: 'User not logged in.');
+    }
+    await user.reload();
+  }
+
+  @override
+  Future<void> setLanguageCode(String code) async {
+    await _auth.setLanguageCode(code);
   }
 
   @override
   Future<void> sendEmailVerification() async {
-    await _auth.currentUser?.sendEmailVerification();
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw FirebaseAuthException(
+          code: 'no-current-user', message: 'User not logged in.');
+    }
+    await user.sendEmailVerification();
   }
 
   @override
   Future<void> verifyBeforeUpdateEmail(String newEmail) async {
-    await _auth.currentUser?.verifyBeforeUpdateEmail(newEmail);
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw FirebaseAuthException(
+          code: 'no-current-user', message: 'User not logged in.');
+    }
+    await user.verifyBeforeUpdateEmail(newEmail);
   }
 
   @override
   Future<bool> isEmailInUse(String email) async {
     try {
-      // 1. Check Firebase Auth
-      final methods = await _auth.fetchSignInMethodsForEmail(email);
-      if (methods.isNotEmpty) return true;
+      // 1. Check Firestore Users collection (Match original working logic)
+      final q = await _firestore
+          .collection('users')
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
+      if (q.docs.isNotEmpty) return true;
 
-      // 2. Check Firestore Users collection (to prevent duplicates in DB)
-      final q = await _firestore.collection('users').where('email', isEqualTo: email).limit(1).get();
-      return q.docs.isNotEmpty;
+      // 2. Check Firebase Auth
+      final methods = await _auth.fetchSignInMethodsForEmail(email);
+      return methods.isNotEmpty;
     } catch (e) {
       return false;
     }
