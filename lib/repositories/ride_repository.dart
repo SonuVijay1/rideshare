@@ -40,22 +40,18 @@ class FirebaseRideRepository implements RideRepository {
   @override
   Future<void> publishRide(String uid, Map<String, dynamic> rideData,
       {String? rideId}) async {
-    final collection =
-        _firestore.collection("users").doc(uid).collection("driverTrips");
+    rideData['driverId'] = uid; // Ensure driverId is in the global doc
+
     if (rideId != null) {
-      await collection.doc(rideId).update(rideData);
+      await _firestore.collection("rides").doc(rideId).update(rideData);
     } else {
-      await collection.doc().set(rideData);
+      await _firestore.collection("rides").add(rideData);
     }
   }
 
   @override
   Future<void> cancelRide(String uid, String rideId, String reason) async {
-    final rideRef = _firestore
-        .collection("users")
-        .doc(uid)
-        .collection("driverTrips")
-        .doc(rideId);
+    final rideRef = _firestore.collection("rides").doc(rideId);
     final docSnap = await rideRef.get();
     if (!docSnap.exists) return;
 
@@ -74,9 +70,8 @@ class FirebaseRideRepository implements RideRepository {
       final pUid = user['uid'];
       if (pUid != null) {
         final q = await _firestore
-            .collection('users')
-            .doc(pUid)
-            .collection('bookedTrips')
+            .collection('rideBookings')
+            .where('passengerId', isEqualTo: pUid)
             .where('rideId', isEqualTo: rideId)
             .get();
         for (final pDoc in q.docs) {
@@ -95,18 +90,18 @@ class FirebaseRideRepository implements RideRepository {
   Future<List<Map<String, dynamic>>> searchRides(double fromLat, double fromLng,
       double toLat, double toLng, int seats) async {
     // Note: Complex geo-query logic from BookRideScreen would go here.
-    // For brevity, returning the raw snapshot docs mapped to data,
-    // but in a real app, you'd move the distance calculation logic here too.
+    // Querying global 'rides' collection
     final snapshot = await _firestore
-        .collectionGroup("driverTrips")
+        .collection("rides")
         .where("status", isEqualTo: "Upcoming")
+        // .where("seatsAvailable", isGreaterThanOrEqualTo: seats) // Optional optimization
         .get();
 
     // We return the docs with their ID and reference path included for the UI to use
     return snapshot.docs.map((d) {
       final data = d.data();
       data['rideId'] = d.id;
-      data['driverId'] = d.reference.parent.parent!.id;
+      // driverId is now part of the document data
       return data;
     }).toList();
   }
@@ -114,40 +109,50 @@ class FirebaseRideRepository implements RideRepository {
   @override
   Stream<List<Map<String, dynamic>>> getDriverTrips(String uid) {
     return _firestore
-        .collection("users")
-        .doc(uid)
-        .collection("driverTrips")
-        .orderBy("date", descending: true)
+        .collection("rides")
+        .where('driverId', isEqualTo: uid)
         .snapshots()
-        .map((snap) => snap.docs.map((d) {
-              final data = d.data();
-              data['rideId'] = d.id;
-              return data;
-            }).toList());
+        .map((snap) {
+      final trips = snap.docs.map((d) {
+        final data = d.data();
+        data['rideId'] = d.id;
+        return data;
+      }).toList();
+      // Sort client-side to avoid composite index requirement
+      trips.sort((a, b) => (b['date'] ?? '').compareTo(a['date'] ?? ''));
+      return trips;
+    });
   }
 
   @override
   Stream<List<Map<String, dynamic>>> getBookedTrips(String uid) {
     return _firestore
-        .collection("users")
-        .doc(uid)
-        .collection("bookedTrips")
-        .orderBy("date", descending: true)
+        .collection("rideBookings")
+        .where('passengerId', isEqualTo: uid)
         .snapshots()
-        .map((snap) => snap.docs.map((d) {
-              final data = d.data();
-              data['bookingId'] = d.id;
-              return data;
-            }).toList());
+        .map((snap) {
+      final trips = snap.docs.map((d) {
+        final data = d.data();
+        data['bookingId'] = d.id;
+        return data;
+      }).toList();
+      // Sort client-side
+      trips.sort((a, b) {
+        final tA = a['bookedAt'];
+        final tB = b['bookedAt'];
+        if (tA is Timestamp && tB is Timestamp) return tB.compareTo(tA);
+        return (tB?.toString() ?? '').compareTo(tA?.toString() ?? '');
+      });
+      return trips;
+    });
   }
 
   @override
   Future<Map<String, dynamic>?> getBookingForRide(
       String uid, String rideId) async {
     final q = await _firestore
-        .collection('users')
-        .doc(uid)
-        .collection('bookedTrips')
+        .collection('rideBookings')
+        .where('passengerId', isEqualTo: uid)
         .where('rideId', isEqualTo: rideId)
         .limit(1)
         .get();
@@ -162,10 +167,9 @@ class FirebaseRideRepository implements RideRepository {
 
   @override
   Stream<Map<String, dynamic>?> getRideStream(String driverId, String rideId) {
+    // driverId is ignored as we use global collection, but kept for interface compatibility
     return _firestore
-        .collection('users')
-        .doc(driverId)
-        .collection('driverTrips')
+        .collection('rides')
         .doc(rideId)
         .snapshots()
         .map((doc) => doc.data());
@@ -173,12 +177,7 @@ class FirebaseRideRepository implements RideRepository {
 
   @override
   Future<Map<String, dynamic>?> getRide(String driverId, String rideId) async {
-    final doc = await _firestore
-        .collection('users')
-        .doc(driverId)
-        .collection('driverTrips')
-        .doc(rideId)
-        .get();
+    final doc = await _firestore.collection('rides').doc(rideId).get();
     return doc.data();
   }
 
@@ -194,11 +193,7 @@ class FirebaseRideRepository implements RideRepository {
     String? existingBookingId,
     int? existingBookedSeats,
   }) async {
-    final rideRef = _firestore
-        .collection('users')
-        .doc(driverId)
-        .collection('driverTrips')
-        .doc(rideId);
+    final rideRef = _firestore.collection('rides').doc(rideId);
     final isUpdate = existingBookingId != null;
 
     await _firestore.runTransaction((transaction) async {
@@ -238,23 +233,17 @@ class FirebaseRideRepository implements RideRepository {
 
       DocumentReference myBookingRef;
       if (isUpdate) {
-        myBookingRef = _firestore
-            .collection('users')
-            .doc(userId)
-            .collection('bookedTrips')
-            .doc(existingBookingId);
+        myBookingRef =
+            _firestore.collection('rideBookings').doc(existingBookingId);
         transaction.update(myBookingRef, {
           'seatsBooked': seats,
           'updatedAt': FieldValue.serverTimestamp(),
         });
       } else {
-        myBookingRef = _firestore
-            .collection('users')
-            .doc(userId)
-            .collection('bookedTrips')
-            .doc();
+        myBookingRef = _firestore.collection('rideBookings').doc();
         final bookingData = Map<String, dynamic>.from(rideData);
         bookingData['seatsBooked'] = seats;
+        bookingData['passengerId'] = userId; // New schema field
         bookingData['status'] = 'Upcoming';
         bookingData['bookedAt'] = FieldValue.serverTimestamp();
         bookingData['driverId'] = driverId;
@@ -272,16 +261,8 @@ class FirebaseRideRepository implements RideRepository {
     required String bookingId,
     required int seatsBooked,
   }) async {
-    final rideRef = _firestore
-        .collection('users')
-        .doc(driverId)
-        .collection('driverTrips')
-        .doc(rideId);
-    final userBookingRef = _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('bookedTrips')
-        .doc(bookingId);
+    final rideRef = _firestore.collection('rides').doc(rideId);
+    final userBookingRef = _firestore.collection('rideBookings').doc(bookingId);
 
     await _firestore.runTransaction((transaction) async {
       final rideSnapshot = await transaction.get(rideRef);

@@ -32,6 +32,24 @@ class TripHistoryScreen extends StatelessWidget {
         return StreamBuilder<List<Map<String, dynamic>>>(
           stream: _rideRepo.getBookedTrips(uid),
           builder: (context, bookedSnap) {
+            if (driverSnap.hasError || bookedSnap.hasError) {
+              return Scaffold(
+                backgroundColor: const Color(0xFF121212),
+                appBar: AppBar(
+                  backgroundColor: Colors.black,
+                  title: const Text("My Trips",
+                      style: TextStyle(color: Colors.white)),
+                ),
+                body: Center(
+                  child: Text(
+                    "Error loading trips. Check console for index link.\n${driverSnap.error ?? bookedSnap.error}",
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.redAccent),
+                  ),
+                ),
+              );
+            }
+
             if (driverSnap.connectionState == ConnectionState.waiting ||
                 bookedSnap.connectionState == ConnectionState.waiting) {
               return const Scaffold(
@@ -41,9 +59,10 @@ class TripHistoryScreen extends StatelessWidget {
               );
             }
 
-            final hasOffered =
-                driverSnap.hasData && driverSnap.data!.isNotEmpty;
-            final hasBooked = bookedSnap.hasData && bookedSnap.data!.isNotEmpty;
+            final driverTrips = driverSnap.data ?? [];
+            final bookedTrips = bookedSnap.data ?? [];
+            final hasOffered = driverTrips.isNotEmpty;
+            final hasBooked = bookedTrips.isNotEmpty;
 
             if (hasOffered && hasBooked) {
               return DefaultTabController(
@@ -71,8 +90,8 @@ class TripHistoryScreen extends StatelessWidget {
                   ),
                   body: TabBarView(
                     children: [
-                      _TripsList(isOffered: true),
-                      _TripsList(isOffered: false),
+                      _TripsList(trips: driverTrips, isOffered: true),
+                      _TripsList(trips: bookedTrips, isOffered: false),
                     ],
                   ),
                 ),
@@ -90,7 +109,7 @@ class TripHistoryScreen extends StatelessWidget {
                         color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                 ),
-                body: _TripsList(isOffered: true),
+                body: _TripsList(trips: driverTrips, isOffered: true),
               );
             } else if (hasBooked) {
               return Scaffold(
@@ -105,7 +124,7 @@ class TripHistoryScreen extends StatelessWidget {
                         color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                 ),
-                body: _TripsList(isOffered: false),
+                body: _TripsList(trips: bookedTrips, isOffered: false),
               );
             } else {
               return Scaffold(
@@ -135,64 +154,44 @@ class TripHistoryScreen extends StatelessWidget {
 }
 
 class _TripsList extends StatelessWidget {
+  final List<Map<String, dynamic>> trips;
   final bool isOffered;
-  final RideRepository _rideRepo = FirebaseRideRepository();
-  final UserRepository _userRepo = FirebaseUserRepository();
 
-  _TripsList({required this.isOffered});
+  const _TripsList({super.key, required this.trips, required this.isOffered});
 
   @override
   Widget build(BuildContext context) {
-    final uid = _userRepo.currentUser?.uid;
-    if (uid == null) return const SizedBox.shrink();
-
-    final stream = isOffered
-        ? _rideRepo.getDriverTrips(uid)
-        : _rideRepo.getBookedTrips(uid);
-
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: stream,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-              child: CircularProgressIndicator(color: Colors.white));
-        }
-
-        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  isOffered ? Icons.directions_car : Icons.confirmation_number,
-                  size: 64,
-                  color: Colors.white12,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  isOffered
-                      ? "You haven't offered any rides yet."
-                      : "You haven't booked any rides yet.",
-                  style: const TextStyle(color: Colors.white38, fontSize: 16),
-                ),
-              ],
+    if (trips.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              isOffered ? Icons.directions_car : Icons.confirmation_number,
+              size: 64,
+              color: Colors.white12,
             ),
-          );
-        }
+            const SizedBox(height: 16),
+            Text(
+              isOffered
+                  ? "You haven't offered any rides yet."
+                  : "You haven't booked any rides yet.",
+              style: const TextStyle(color: Colors.white38, fontSize: 16),
+            ),
+          ],
+        ),
+      );
+    }
 
-        final docs = snapshot.data!;
-
-        return ListView.separated(
-          padding: const EdgeInsets.all(20),
-          itemCount: docs.length,
-          separatorBuilder: (context, index) => const SizedBox(height: 16),
-          itemBuilder: (context, index) {
-            final data = docs[index];
-            final id =
-                isOffered ? (data['rideId'] ?? '') : (data['bookingId'] ?? '');
-            return _TripCard(data: data, rideId: id, isOffered: isOffered);
-          },
-        );
+    return ListView.separated(
+      padding: const EdgeInsets.all(20),
+      itemCount: trips.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 16),
+      itemBuilder: (context, index) {
+        final data = trips[index];
+        final id =
+            isOffered ? (data['rideId'] ?? '') : (data['bookingId'] ?? '');
+        return _TripCard(data: data, rideId: id, isOffered: isOffered);
       },
     );
   }

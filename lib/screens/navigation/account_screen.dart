@@ -618,6 +618,24 @@ class _AccountScreenState extends State<AccountScreen>
                               _tile("City", city),
 
                               const SizedBox(height: 20),
+                              section("Vehicle Details"),
+                              _tile("Type", data['vehicleType'] ?? "Not Added",
+                                  onTap: () =>
+                                      _openEditProfileSheet(context, safeData)),
+                              _tile(
+                                  "Model", data['vehicleModel'] ?? "Not Added",
+                                  onTap: () =>
+                                      _openEditProfileSheet(context, safeData)),
+                              _tile(
+                                  "Color", data['vehicleColor'] ?? "Not Added",
+                                  onTap: () =>
+                                      _openEditProfileSheet(context, safeData)),
+                              _tile("Number",
+                                  data['vehicleNumber'] ?? "Not Added",
+                                  onTap: () =>
+                                      _openEditProfileSheet(context, safeData)),
+
+                              const SizedBox(height: 20),
 
                               // DOCUMENTS
                               section("Identity Verification"),
@@ -654,18 +672,25 @@ class _AccountScreenState extends State<AccountScreen>
 
   // UI HELPERS
 
-  Widget _tile(String t, String v) => Container(
-        padding: const EdgeInsets.all(14),
-        margin: const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
-            color: const Color(0xFF1E1E1E),
-            borderRadius: BorderRadius.circular(12)),
-        child: Row(
-          children: [
-            Text(t, style: const TextStyle(color: Colors.white54)),
-            const Spacer(),
-            Text(v, style: const TextStyle(color: Colors.white)),
-          ],
+  Widget _tile(String t, String v, {VoidCallback? onTap}) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          margin: const EdgeInsets.only(bottom: 8),
+          decoration: BoxDecoration(
+              color: const Color(0xFF1E1E1E),
+              borderRadius: BorderRadius.circular(12)),
+          child: Row(
+            children: [
+              Text(t, style: const TextStyle(color: Colors.white54)),
+              const Spacer(),
+              Text(v, style: const TextStyle(color: Colors.white)),
+              if (onTap != null) ...[
+                const SizedBox(width: 8),
+                const Icon(Icons.edit, size: 14, color: Colors.white24)
+              ]
+            ],
+          ),
         ),
       );
 
@@ -1012,8 +1037,12 @@ class _AccountScreenState extends State<AccountScreen>
     final c = TextEditingController(text: d['city'] ?? "");
     final a = TextEditingController(text: d['age']?.toString() ?? "");
     final dobC = TextEditingController(text: d['dob'] ?? "");
+    final vm = TextEditingController(text: d['vehicleModel'] ?? "");
+    final vn = TextEditingController(text: d['vehicleNumber'] ?? "");
+    final vc = TextEditingController(text: d['vehicleColor'] ?? "");
 
     String gender = d['gender'] ?? "Male";
+    String vehicleType = d['vehicleType'] ?? "Car";
 
     showModalBottomSheet(
         context: context,
@@ -1083,6 +1112,30 @@ class _AccountScreenState extends State<AccountScreen>
                   _input("Age", a),
                   const SizedBox(height: 10),
                   _input("City", c),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                      value: vehicleType,
+                      dropdownColor: Colors.black,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: _dec("Vehicle Type"),
+                      items: const [
+                        DropdownMenuItem(
+                            value: "Car", child: Text("Car (4 seats)")),
+                        DropdownMenuItem(
+                            value: "Bike", child: Text("Bike (1 seat)")),
+                        DropdownMenuItem(
+                            value: "SUV", child: Text("SUV (6 seats)")),
+                        DropdownMenuItem(
+                            value: "Bus", child: Text("Bus (20+ seats)")),
+                        DropdownMenuItem(value: "Other", child: Text("Other")),
+                      ],
+                      onChanged: (v) => setState(() => vehicleType = v!)),
+                  const SizedBox(height: 10),
+                  _input("Vehicle Model", vm),
+                  const SizedBox(height: 10),
+                  _input("Vehicle Color", vc),
+                  const SizedBox(height: 10),
+                  _input("Vehicle Number", vn),
                   const SizedBox(height: 20),
                   ElevatedButton(
                       style: ElevatedButton.styleFrom(
@@ -1095,6 +1148,10 @@ class _AccountScreenState extends State<AccountScreen>
                           "city": c.text.trim(),
                           "age": int.tryParse(a.text.trim()),
                           "dob": dobC.text.trim(),
+                          "vehicleModel": vm.text.trim(),
+                          "vehicleNumber": vn.text.trim(),
+                          "vehicleColor": vc.text.trim(),
+                          "vehicleType": vehicleType,
                         });
 
                         if (context.mounted) Navigator.pop(context);

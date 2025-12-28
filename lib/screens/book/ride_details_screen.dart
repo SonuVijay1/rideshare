@@ -459,6 +459,50 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                             ],
                           ),
                         ),
+
+                        if (data['vehicleModel'] != null &&
+                            (data['vehicleModel'] as String).isNotEmpty) ...[
+                          const SizedBox(height: 20),
+                          Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1E1E1E),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.white10),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.directions_car,
+                                    color: Colors.white70),
+                                const SizedBox(width: 12),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                        "${data['vehicleModel']} (${data['vehicleType'] ?? 'Car'})",
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold)),
+                                    if (data['vehicleColor'] != null)
+                                      Text(data['vehicleColor'],
+                                          style: const TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 13)),
+                                    if (data['vehicleNumber'] != null &&
+                                        (data['vehicleNumber'] as String)
+                                            .isNotEmpty)
+                                      Text(data['vehicleNumber'],
+                                          style: const TextStyle(
+                                              color: Colors.white54,
+                                              fontSize: 12)),
+                                  ],
+                                )
+                              ],
+                            ),
+                          ),
+                        ],
+
                         const SizedBox(height: 20),
 
                         // Seat Selection

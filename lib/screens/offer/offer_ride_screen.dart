@@ -30,8 +30,9 @@ class _OfferRideScreenState extends State<OfferRideScreen>
   // controllers
   final pickupController = TextEditingController();
   final dropController = TextEditingController();
-  // final carModelController = TextEditingController();
-  // final carNumberController = TextEditingController();
+  final carModelController = TextEditingController();
+  final carNumberController = TextEditingController();
+  final carColorController = TextEditingController();
 
   // errors
   bool pickupError = false;
@@ -78,6 +79,7 @@ class _OfferRideScreenState extends State<OfferRideScreen>
   DateTime? _initialDate;
   TimeOfDay? _initialTime;
   int? _initialSeats;
+  String _selectedVehicleType = "Car";
 
   final RideRepository _rideRepo = FirebaseRideRepository();
   final UserRepository _userRepo = FirebaseUserRepository();
@@ -105,6 +107,71 @@ class _OfferRideScreenState extends State<OfferRideScreen>
 
     if (widget.existingRideData != null) {
       _prefillData();
+    } else {
+      _checkVehicleDetails();
+    }
+  }
+
+  Future<void> _checkVehicleDetails() async {
+    final user = _userRepo.currentUser;
+    if (user == null) return;
+
+    final userData = await _userRepo.getUser(user.uid);
+    if (userData == null) return;
+
+    final vModel = userData['vehicleModel'];
+    final vNumber = userData['vehicleNumber'];
+    final vType = userData['vehicleType'] ?? "Car";
+    final vColor = userData['vehicleColor'] ?? "";
+
+    if (vModel == null ||
+        vModel.toString().trim().isEmpty ||
+        vNumber == null ||
+        vNumber.toString().trim().isEmpty) {
+      if (!mounted) return;
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          title: const Text("Vehicle Details Missing",
+              style: TextStyle(color: Colors.white)),
+          content: const Text(
+            "Please add your vehicle model and number in the Account section before offering a ride.",
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.pop(context);
+              },
+              child:
+                  const Text("OK", style: TextStyle(color: Colors.blueAccent)),
+            ),
+          ],
+        ),
+      );
+    } else {
+      if (mounted) {
+        setState(() {
+          carModelController.text = vModel;
+          carNumberController.text = vNumber;
+          carColorController.text = vColor;
+          _selectedVehicleType = vType;
+
+          // Auto-detect seats based on vehicle type
+          if (vType == "Bike") {
+            seats = 1;
+          } else if (vType == "Car") {
+            seats = 4;
+          } else if (vType == "SUV") {
+            seats = 6;
+          } else if (vType == "Bus") {
+            seats = 30;
+          }
+        });
+      }
     }
   }
 
@@ -141,6 +208,10 @@ class _OfferRideScreenState extends State<OfferRideScreen>
     seatsBooked = data['seatsBooked'] ?? 0;
     distanceKm = (data['distanceKm'] as num?)?.toDouble();
     durationStr = data['duration'];
+    carModelController.text = data['vehicleModel'] ?? '';
+    carNumberController.text = data['vehicleNumber'] ?? '';
+    carColorController.text = data['vehicleColor'] ?? '';
+    _selectedVehicleType = data['vehicleType'] ?? 'Car';
 
     // Capture initial state
     _initialPickup = pickupController.text;
@@ -385,8 +456,10 @@ class _OfferRideScreenState extends State<OfferRideScreen>
         "duration": durationStr ?? "",
         "seatsAvailable": seats,
         "seatsBooked": seatsBooked,
-        // "carModel": carModelController.text.trim(),
-        // "carNumber": carNumberController.text.trim(),
+        "vehicleModel": carModelController.text.trim(),
+        "vehicleNumber": carNumberController.text.trim(),
+        "vehicleColor": carColorController.text.trim(),
+        "vehicleType": _selectedVehicleType,
       };
 
       if (widget.rideId != null) {
@@ -547,7 +620,6 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                       enabled: !isRestricted,
                     ),
                     _suggestions(_pickupSuggestions, true),
-
                     const SizedBox(height: 6),
                     Center(
                       child: RotationTransition(
@@ -564,7 +636,6 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                       ),
                     ),
                     const SizedBox(height: 6),
-
                     _input(
                       "Drop Location",
                       Icons.flag,
@@ -574,7 +645,6 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                     ),
                     _suggestions(_dropSuggestions, false),
                     const SizedBox(height: 15),
-
                     _picker(
                       "Select Date",
                       selectedDate == null
@@ -585,7 +655,6 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                       enabled: !isRestricted,
                     ),
                     const SizedBox(height: 15),
-
                     _picker(
                       "Select Time",
                       selectedTime == null
@@ -596,10 +665,8 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                       enabled: !isRestricted,
                     ),
                     const SizedBox(height: 15),
-
                     _seatsCard(),
                     const SizedBox(height: 10),
-
                     if (isFetchingRoute)
                       const CircularProgressIndicator(color: Colors.white)
                     else if (distanceKm != null)
@@ -608,15 +675,16 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                         style: const TextStyle(
                             color: Colors.white70, fontSize: 13),
                       ),
-
                     const SizedBox(height: 20),
-                    // _input("Car Model (optional)",
-                    //     Icons.directions_car, carModelController),
-                    // const SizedBox(height: 15),
-                    // _input("Car Number (optional)",
-                    //     Icons.confirmation_number, carNumberController),
-                    // const SizedBox(height: 30),
-
+                    _input("Vehicle Model (e.g. Swift)", Icons.directions_car,
+                        carModelController),
+                    const SizedBox(height: 15),
+                    _input(
+                        "Vehicle Color", Icons.color_lens, carColorController),
+                    const SizedBox(height: 15),
+                    _input("Vehicle Number (Optional)",
+                        Icons.confirmation_number, carNumberController),
+                    const SizedBox(height: 30),
                     SizedBox(
                       width: double.infinity,
                       height: 55,
