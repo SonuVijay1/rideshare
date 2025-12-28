@@ -556,18 +556,76 @@ class _AccountScreenState extends State<AccountScreen>
                                     style: TextStyle(color: Colors.white)))
                           ],
                         ),
-                        const SizedBox(height: 16),
-                        LinearProgressIndicator(
-                          value: completion,
-                          color: Colors.greenAccent,
-                          backgroundColor: Colors.white10,
+                        const SizedBox(height: 24),
+                        Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text("Profile Completion",
+                                    style: TextStyle(
+                                        color: Colors.white70, fontSize: 12)),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                      color: completion == 1.0
+                                          ? Colors.greenAccent.withOpacity(0.2)
+                                          : Colors.blueAccent.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(8)),
+                                  child: Text("${(completion * 100).round()}%",
+                                      style: TextStyle(
+                                          color: completion == 1.0
+                                              ? Colors.greenAccent
+                                              : Colors.blueAccent,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12)),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            TweenAnimationBuilder<double>(
+                              tween: Tween<double>(begin: 0, end: completion),
+                              duration: const Duration(milliseconds: 1000),
+                              curve: Curves.easeOutExpo,
+                              builder: (context, value, _) => Container(
+                                height: 10,
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  color: Colors.white10,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: FractionallySizedBox(
+                                  alignment: Alignment.centerLeft,
+                                  widthFactor: value,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(20),
+                                      gradient: LinearGradient(
+                                        colors: value == 1.0
+                                            ? [Colors.green, Colors.greenAccent]
+                                            : [
+                                                Colors.blue,
+                                                Colors.purpleAccent
+                                              ],
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: (value == 1.0
+                                                  ? Colors.greenAccent
+                                                  : Colors.blueAccent)
+                                              .withOpacity(0.5),
+                                          blurRadius: 6,
+                                          offset: const Offset(0, 2),
+                                        )
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          "Profile Completion ${(completion * 100).round()}%",
-                          style: const TextStyle(
-                              color: Colors.white54, fontSize: 12),
-                        )
                       ],
                     ),
                   ),
