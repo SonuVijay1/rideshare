@@ -27,10 +27,10 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
   bool isLoadingDriver = true;
   int selectedSeats = 1;
   bool isBooking = false;
-  
+
   // For editing
   int maxSeatsAvailable = 1;
-  
+
   // Local state for detected booking (when coming from search)
   String? _localBookingId;
   int? _localBookedSeats;
@@ -42,10 +42,10 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
       selectedSeats = widget.existingBookedSeats!;
     }
     debugPrint("RideDetailsScreen: Init. BookingId: ${widget.bookingId}");
-    
+
     // Initialize max seats from passed data initially
     maxSeatsAvailable = widget.rideData['seatsAvailable'] ?? 1;
-    
+
     _fetchDriverDetails();
     _fetchFreshRideData();
     _checkExistingBooking();
@@ -118,20 +118,29 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
 
   Future<void> _bookRide() async {
     final effectiveBookingId = widget.bookingId ?? _localBookingId;
-    final effectiveBookedSeats = widget.existingBookedSeats ?? _localBookedSeats;
+    final effectiveBookedSeats =
+        widget.existingBookedSeats ?? _localBookedSeats;
     final isUpdate = effectiveBookingId != null;
-    
+
     if (isUpdate && selectedSeats < effectiveBookedSeats!) {
       final diff = effectiveBookedSeats - selectedSeats;
       final confirm = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: const Color(0xFF1E1E1E),
-          title: const Text("Reduce Seats?", style: TextStyle(color: Colors.white)),
-          content: Text("You are removing $diff seat(s). This will cancel booking for those seats.", style: const TextStyle(color: Colors.white70)),
+          title: const Text("Reduce Seats?",
+              style: TextStyle(color: Colors.white)),
+          content: Text(
+              "You are removing $diff seat(s). This will cancel booking for those seats.",
+              style: const TextStyle(color: Colors.white70)),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("No")),
-            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Yes", style: TextStyle(color: Colors.redAccent))),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text("No")),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text("Yes",
+                    style: TextStyle(color: Colors.redAccent))),
           ],
         ),
       );
@@ -149,7 +158,8 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
       final uid = user.uid;
 
       // Fetch user name for booking record
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final userDoc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
       final userName = userDoc.data()?['name'] ?? "Unknown User";
 
       // Run transaction to ensure seat availability
@@ -159,25 +169,26 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
 
         final snapshotData = rideSnapshot.data() as Map<String, dynamic>;
         final currentSeats = snapshotData['seatsAvailable'] as int;
-        
+
         int seatsChange = selectedSeats;
         if (isUpdate) {
           seatsChange = selectedSeats - effectiveBookedSeats!;
         }
 
         if (seatsChange > 0 && currentSeats < seatsChange) {
-           throw Exception("Not enough seats available");
+          throw Exception("Not enough seats available");
         }
 
         // Update ride doc
         // Update bookedUsers array: remove old entry if update, add new entry
-        List<dynamic> bookedUsers = List.from(snapshotData['bookedUsers'] ?? []);
-        
+        List<dynamic> bookedUsers =
+            List.from(snapshotData['bookedUsers'] ?? []);
+
         if (isUpdate) {
           // Remove existing user entry
           bookedUsers.removeWhere((element) => element['uid'] == uid);
         }
-        
+
         // Add new entry
         bookedUsers.add({
           'uid': uid,
@@ -196,21 +207,21 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
         DocumentReference myBookingRef;
         if (isUpdate) {
           myBookingRef = FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .collection('bookedTrips')
-            .doc(effectiveBookingId);
-            
-           transaction.update(myBookingRef, {
-             'seatsBooked': selectedSeats,
-             'updatedAt': FieldValue.serverTimestamp(),
-           });
+              .collection('users')
+              .doc(uid)
+              .collection('bookedTrips')
+              .doc(effectiveBookingId);
+
+          transaction.update(myBookingRef, {
+            'seatsBooked': selectedSeats,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
         } else {
-           myBookingRef = FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .collection('bookedTrips')
-            .doc();
+          myBookingRef = FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .collection('bookedTrips')
+              .doc();
 
           final bookingData = Map<String, dynamic>.from(widget.rideData);
           bookingData['seatsBooked'] = selectedSeats; // My booked seats
@@ -218,16 +229,26 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
           bookingData['bookedAt'] = FieldValue.serverTimestamp();
           bookingData['driverId'] = widget.rideReference.parent.parent!.id;
           bookingData['rideId'] = widget.rideReference.id;
-          
+
           transaction.set(myBookingRef, bookingData);
         }
       });
 
+      if (!isUpdate) {
+        await FirebaseFirestore.instance.collection('users').doc(uid).update({
+          'ridesTaken': FieldValue.increment(1),
+        });
+      }
+
       if (!mounted) return;
-      
+
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => RidePublishedScreen(rideData: widget.rideData, isUpdate: isUpdate, isBooking: true)),
+        MaterialPageRoute(
+            builder: (_) => RidePublishedScreen(
+                rideData: widget.rideData,
+                isUpdate: isUpdate,
+                isBooking: true)),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -239,59 +260,87 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
 
   Future<void> _cancelBooking() async {
     final effectiveBookingId = widget.bookingId ?? _localBookingId;
-    final effectiveBookedSeats = widget.existingBookedSeats ?? _localBookedSeats;
-    
+    final effectiveBookedSeats =
+        widget.existingBookedSeats ?? _localBookedSeats;
+
     if (effectiveBookingId == null) return;
 
     final confirm = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF1E1E1E),
-          title: const Text("Cancel Booking?", style: TextStyle(color: Colors.white)),
-          content: const Text("Are you sure you want to cancel this booking? This action cannot be undone.", style: TextStyle(color: Colors.white70)),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("No")),
-            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Yes, Cancel", style: TextStyle(color: Colors.redAccent))),
-          ],
-        ),
-      );
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text("Cancel Booking?",
+            style: TextStyle(color: Colors.white)),
+        content: const Text(
+            "Are you sure you want to cancel this booking? This action cannot be undone.",
+            style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text("No")),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text("Yes, Cancel",
+                  style: TextStyle(color: Colors.redAccent))),
+        ],
+      ),
+    );
     if (confirm != true) return;
 
     setState(() => isBooking = true);
     try {
-        final user = FirebaseAuth.instance.currentUser;
-        if (user == null) return;
-        final uid = user.uid;
-        final userBookingRef = FirebaseFirestore.instance.collection('users').doc(uid).collection('bookedTrips').doc(effectiveBookingId);
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      final uid = user.uid;
+      final userBookingRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('bookedTrips')
+          .doc(effectiveBookingId);
 
-        await FirebaseFirestore.instance.runTransaction((transaction) async {
-            final rideSnapshot = await transaction.get(widget.rideReference);
-            if (!rideSnapshot.exists) throw Exception("Ride does not exist anymore.");
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final rideSnapshot = await transaction.get(widget.rideReference);
+        if (!rideSnapshot.exists)
+          throw Exception("Ride does not exist anymore.");
 
-            final snapshotData = rideSnapshot.data() as Map<String, dynamic>;
-            List<dynamic> bookedUsers = List.from(snapshotData['bookedUsers'] ?? []);
-            
-            final userBookingData = bookedUsers.firstWhere((b) => b['uid'] == uid, orElse: () => null);
+        final snapshotData = rideSnapshot.data() as Map<String, dynamic>;
+        List<dynamic> bookedUsers =
+            List.from(snapshotData['bookedUsers'] ?? []);
 
-            if (userBookingData != null) {
-                 transaction.update(widget.rideReference, {
-                    'seatsAvailable': FieldValue.increment(effectiveBookedSeats!),
-                    'seatsBooked': FieldValue.increment(-effectiveBookedSeats),
-                    'bookedUsers': FieldValue.arrayRemove([userBookingData])
-                });
-            }
-            transaction.delete(userBookingRef);
-        });
+        final userBookingData =
+            bookedUsers.firstWhere((b) => b['uid'] == uid, orElse: () => null);
 
-        if (!mounted) return;
-        
-        Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => RidePublishedScreen(
-          rideData: widget.rideData, isBooking: true, isCancellation: true)), (route) => route.isFirst);
+        if (userBookingData != null) {
+          transaction.update(widget.rideReference, {
+            'seatsAvailable': FieldValue.increment(effectiveBookedSeats!),
+            'seatsBooked': FieldValue.increment(-effectiveBookedSeats),
+            'bookedUsers': FieldValue.arrayRemove([userBookingData])
+          });
+        }
+        transaction.delete(userBookingRef);
+      });
+
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'ridesTaken': FieldValue.increment(-1),
+        'ridesCancelled': FieldValue.increment(1),
+      });
+
+      if (!mounted) return;
+
+      Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+              builder: (_) => RidePublishedScreen(
+                  rideData: widget.rideData,
+                  isBooking: true,
+                  isCancellation: true)),
+          (route) => route.isFirst);
     } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Cancellation failed: ${e.toString()}")));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Cancellation failed: ${e.toString()}")));
     } finally {
-        if (mounted) setState(() => isBooking = false);
+      if (mounted) setState(() => isBooking = false);
     }
   }
 
@@ -309,8 +358,7 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
     if (durationStr == null) return const Duration(hours: 2); // Default
     int hours = 0;
     int mins = 0;
-    final hMatch =
-        RegExp(r'(\d+)\s*(h|hr|hour|hours)').firstMatch(durationStr);
+    final hMatch = RegExp(r'(\d+)\s*(h|hr|hour|hours)').firstMatch(durationStr);
     final mMatch =
         RegExp(r'(\d+)\s*(m|min|mins|minute|minutes)').firstMatch(durationStr);
     if (hMatch != null) hours = int.parse(hMatch.group(1)!);
@@ -324,9 +372,10 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
     return StreamBuilder<DocumentSnapshot>(
       stream: widget.rideReference.snapshots(),
       builder: (context, snapshot) {
-        final data = snapshot.hasData && snapshot.data != null && snapshot.data!.exists
-            ? snapshot.data!.data() as Map<String, dynamic>
-            : widget.rideData;
+        final data =
+            snapshot.hasData && snapshot.data != null && snapshot.data!.exists
+                ? snapshot.data!.data() as Map<String, dynamic>
+                : widget.rideData;
 
         final uid = FirebaseAuth.instance.currentUser?.uid;
         final bookedUsers = (data['bookedUsers'] as List<dynamic>?)
@@ -335,10 +384,12 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
             [];
 
         final effectiveBookingId = widget.bookingId ?? _localBookingId;
-        final effectiveBookedSeats = widget.existingBookedSeats ?? _localBookedSeats;
+        final effectiveBookedSeats =
+            widget.existingBookedSeats ?? _localBookedSeats;
 
         // Check if already booked (only for new bookings)
-        final isAlreadyBooked = uid != null && effectiveBookingId == null &&
+        final isAlreadyBooked = uid != null &&
+            effectiveBookingId == null &&
             bookedUsers.any((u) => u['uid'] == uid);
 
         final int currentSeatsAvailable = data['seatsAvailable'] ?? 0;
@@ -351,306 +402,356 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
             : currentSeatsAvailable;
 
         final bool isFullyBooked = effectiveMaxSeats <= 0;
-        final bool canBook = !isBooking && !isAlreadyBooked && !isFullyBooked && selectedSeats <= effectiveMaxSeats;
-        
-        final bool isUpdate = effectiveBookingId != null;
-        final bool hasChanges = !isUpdate || (selectedSeats != (effectiveBookedSeats ?? 0));
+        final bool canBook = !isBooking &&
+            !isAlreadyBooked &&
+            !isFullyBooked &&
+            selectedSeats <= effectiveMaxSeats;
 
-    // Calculate End Time
-    String endTimeStr = "";
-    try {
-      final timeStr = data['time'] as String?;
-      final durationStr = data['duration'] as String?;
-      if (timeStr != null) {
-        final cleanTimeStr = timeStr.replaceAll('\u202F', ' ');
-        final startTime = DateFormat("h:mm a").parse(cleanTimeStr);
-        final duration = _parseDuration(durationStr);
-        final endTime = startTime.add(duration);
-        endTimeStr = DateFormat("h:mm a").format(endTime);
-      }
-    } catch (_) {}
+        final bool isUpdate = effectiveBookingId != null;
+        final bool hasChanges =
+            !isUpdate || (selectedSeats != (effectiveBookedSeats ?? 0));
+
+        // Calculate End Time
+        String endTimeStr = "";
+        try {
+          final timeStr = data['time'] as String?;
+          final durationStr = data['duration'] as String?;
+          if (timeStr != null) {
+            final cleanTimeStr = timeStr.replaceAll('\u202F', ' ');
+            final startTime = DateFormat("h:mm a").parse(cleanTimeStr);
+            final duration = _parseDuration(durationStr);
+            final endTime = startTime.add(duration);
+            endTimeStr = DateFormat("h:mm a").format(endTime);
+          }
+        } catch (_) {}
 
         return Scaffold(
-      backgroundColor: const Color(0xFF121212),
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        title: Text(effectiveBookingId != null ? "Edit Booking" : "Ride Details", style: const TextStyle(color: Colors.white)),
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (isAlreadyBooked)
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 20),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: Colors.blueAccent.withOpacity(0.3)),
-                        ),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.info_outline,
-                                color: Colors.blueAccent, size: 20),
-                            SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                "You have already booked this ride.",
-                                style: TextStyle(
-                                    color: Colors.blueAccent, fontSize: 13),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    if (effectiveBookingId != null)
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 20),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: Colors.blueAccent.withOpacity(0.3)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.info_outline, color: Colors.blueAccent, size: 20),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text("You have booked this ride for ${effectiveBookedSeats ?? 0} seat(s).", style: const TextStyle(color: Colors.blueAccent, fontSize: 13)),
-                            ),
-                          ],
-                        ),
-                      ),
-                    if (isFullyBooked && !isAlreadyBooked)
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 20),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: Colors.orangeAccent.withOpacity(0.3)),
-                        ),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.warning_amber_rounded,
-                                color: Colors.orangeAccent, size: 20),
-                            SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                "This ride is fully booked.",
-                                style: TextStyle(
-                                    color: Colors.orangeAccent, fontSize: 13),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    // Driver Info Card
-                    _driverCard(),
-                    const SizedBox(height: 20),
-
-                    // Ride Info
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E1E1E),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white10),
-                      ),
-                      child: Column(
-                        children: [
-                          _row(Icons.calendar_today, _formatDate(data['date'])),
-                          const SizedBox(height: 12),
-                          _row(Icons.access_time, data['time'] ?? ''),
-                          const Divider(color: Colors.white10, height: 24),
-                          _locationRow(Icons.circle, Colors.green, data['from'] ?? '', data['time'] ?? ''),
+          backgroundColor: const Color(0xFF121212),
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            title: Text(
+                effectiveBookingId != null ? "Edit Booking" : "Ride Details",
+                style: const TextStyle(color: Colors.white)),
+            iconTheme: const IconThemeData(color: Colors.white),
+          ),
+          body: SafeArea(
+            child: Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (isAlreadyBooked)
                           Container(
-                            margin: const EdgeInsets.only(left: 11),
-                            height: 20,
-                            width: 2,
-                            color: Colors.white24,
-                          ),
-                          _locationRow(Icons.location_on, Colors.redAccent, data['to'] ?? '', endTimeStr),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Seat Selection
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E1E1E),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text("Select Seats",
-                              style: TextStyle(color: Colors.white70)),
-                          const SizedBox(height: 10),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  IconButton(
-                                    icon: Icon(Icons.remove_circle_outline,
-                                        color: selectedSeats > 1
-                                            ? (canBook ? Colors.white : Colors.white24)
-                                            : Colors.white24),
-                                    onPressed: canBook && selectedSeats > 1
-                                        ? () => setState(() => selectedSeats--)
-                                        : null,
+                            margin: const EdgeInsets.only(bottom: 20),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: Colors.blueAccent.withOpacity(0.3)),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.info_outline,
+                                    color: Colors.blueAccent, size: 20),
+                                SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    "You have already booked this ride.",
+                                    style: TextStyle(
+                                        color: Colors.blueAccent, fontSize: 13),
                                   ),
-                                  Text("$selectedSeats",
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (effectiveBookingId != null)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 20),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: Colors.blueAccent.withOpacity(0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.info_outline,
+                                    color: Colors.blueAccent, size: 20),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                      "You have booked this ride for ${effectiveBookedSeats ?? 0} seat(s).",
                                       style: const TextStyle(
-                                          color: Colors.white, fontSize: 18)),
-                                  IconButton(
-                                    icon: Icon(Icons.add_circle_outline,
-                                        color: canBook && selectedSeats < effectiveMaxSeats
-                                            ? (canBook ? Colors.white : Colors.white24)
-                                            : Colors.white24),
-                                    onPressed: canBook && selectedSeats < effectiveMaxSeats
-                                        ? () => setState(() => selectedSeats++)
-                                        : null,
+                                          color: Colors.blueAccent,
+                                          fontSize: 13)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (isFullyBooked && !isAlreadyBooked)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 20),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: Colors.orangeAccent.withOpacity(0.3)),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.warning_amber_rounded,
+                                    color: Colors.orangeAccent, size: 20),
+                                SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    "This ride is fully booked.",
+                                    style: TextStyle(
+                                        color: Colors.orangeAccent,
+                                        fontSize: 13),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        // Driver Info Card
+                        _driverCard(),
+                        const SizedBox(height: 20),
+
+                        // Ride Info
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E1E1E),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.white10),
+                          ),
+                          child: Column(
+                            children: [
+                              _row(Icons.calendar_today,
+                                  _formatDate(data['date'])),
+                              const SizedBox(height: 12),
+                              _row(Icons.access_time, data['time'] ?? ''),
+                              const Divider(color: Colors.white10, height: 24),
+                              _locationRow(Icons.circle, Colors.green,
+                                  data['from'] ?? '', data['time'] ?? ''),
+                              Container(
+                                margin: const EdgeInsets.only(left: 11),
+                                height: 20,
+                                width: 2,
+                                color: Colors.white24,
+                              ),
+                              _locationRow(Icons.location_on, Colors.redAccent,
+                                  data['to'] ?? '', endTimeStr),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Seat Selection
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E1E1E),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text("Select Seats",
+                                  style: TextStyle(color: Colors.white70)),
+                              const SizedBox(height: 10),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      IconButton(
+                                        icon: Icon(Icons.remove_circle_outline,
+                                            color: selectedSeats > 1
+                                                ? (canBook
+                                                    ? Colors.white
+                                                    : Colors.white24)
+                                                : Colors.white24),
+                                        onPressed: canBook && selectedSeats > 1
+                                            ? () =>
+                                                setState(() => selectedSeats--)
+                                            : null,
+                                      ),
+                                      Text("$selectedSeats",
+                                          style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 18)),
+                                      IconButton(
+                                        icon: Icon(Icons.add_circle_outline,
+                                            color: canBook &&
+                                                    selectedSeats <
+                                                        effectiveMaxSeats
+                                                ? (canBook
+                                                    ? Colors.white
+                                                    : Colors.white24)
+                                                : Colors.white24),
+                                        onPressed: canBook &&
+                                                selectedSeats <
+                                                    effectiveMaxSeats
+                                            ? () =>
+                                                setState(() => selectedSeats++)
+                                            : null,
+                                      ),
+                                    ],
+                                  ),
+                                  Text(
+                                    "₹${(int.tryParse(data['price']?.toString() ?? '150') ?? 150) * selectedSeats}",
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold),
                                   ),
                                 ],
                               ),
-                              Text(
-                                "₹${(int.tryParse(data['price']?.toString() ?? '150') ?? 150) * selectedSeats}",
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold),
-                              ),
                             ],
                           ),
-                        ],
-                      ),
-                    ),
+                        ),
 
-                    // Booked Users
-                    if (data['bookedUsers'] != null && (data['bookedUsers'] as List).isNotEmpty) ...[
-                      const SizedBox(height: 20),
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1E1E1E),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.white10),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              "Booked Users (${(data['bookedUsers'] as List).length})",
-                              style: const TextStyle(color: Colors.white70, fontSize: 14),
+                        // Booked Users
+                        if (data['bookedUsers'] != null &&
+                            (data['bookedUsers'] as List).isNotEmpty) ...[
+                          const SizedBox(height: 20),
+                          Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1E1E1E),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.white10),
                             ),
-                            const SizedBox(height: 10),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: (data['bookedUsers'] as List).map<Widget>((user) {
-                                final name = user is Map ? (user['name'] ?? 'User') : 'User';
-                                return Chip(
-                                  backgroundColor: Colors.white10,
-                                  avatar: const CircleAvatar(
-                                    backgroundColor: Colors.grey,
-                                    child: Icon(Icons.person, size: 12, color: Colors.white),
-                                  ),
-                                  label: Text(
-                                    name,
-                                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                                  ),
-                                );
-                              }).toList(),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "Booked Users (${(data['bookedUsers'] as List).length})",
+                                  style: const TextStyle(
+                                      color: Colors.white70, fontSize: 14),
+                                ),
+                                const SizedBox(height: 10),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: (data['bookedUsers'] as List)
+                                      .map<Widget>((user) {
+                                    final name = user is Map
+                                        ? (user['name'] ?? 'User')
+                                        : 'User';
+                                    return Chip(
+                                      backgroundColor: Colors.white10,
+                                      avatar: const CircleAvatar(
+                                        backgroundColor: Colors.grey,
+                                        child: Icon(Icons.person,
+                                            size: 12, color: Colors.white),
+                                      ),
+                                      label: Text(
+                                        name,
+                                        style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 12),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  SizedBox(
-                    width: double.infinity,
-                    height: 55,
-                    child: ElevatedButton(
-                      onPressed: (canBook && hasChanges) ? _bookRide : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black,
-                        disabledBackgroundColor: Colors.white24,
-                        disabledForegroundColor: Colors.white38,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
-                      ),
-                      child: isBooking
-                          ? const CircularProgressIndicator(color: Colors.black)
-                          : Text(effectiveBookingId != null ? "Update Booking" : "Book Ride",
-                              style: TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                  if (effectiveBookingId != null) ...[
-                    const SizedBox(height: 10),
-                    TextButton(
-                      onPressed: isBooking ? null : _cancelBooking,
-                      child: const Text(
-                        "Cancel Booking",
-                        style: TextStyle(color: Colors.redAccent, fontSize: 16),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        width: double.infinity,
+                        height: 55,
+                        child: ElevatedButton(
+                          onPressed: (canBook && hasChanges) ? _bookRide : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.black,
+                            disabledBackgroundColor: Colors.white24,
+                            disabledForegroundColor: Colors.white38,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14)),
+                          ),
+                          child: isBooking
+                              ? const CircularProgressIndicator(
+                                  color: Colors.black)
+                              : Text(
+                                  effectiveBookingId != null
+                                      ? "Update Booking"
+                                      : "Book Ride",
+                                  style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold)),
+                        ),
                       ),
-                    )
-                  ]
-                ],
-              ),
+                      if (effectiveBookingId != null) ...[
+                        const SizedBox(height: 10),
+                        TextButton(
+                          onPressed: isBooking ? null : _cancelBooking,
+                          child: const Text(
+                            "Cancel Booking",
+                            style: TextStyle(
+                                color: Colors.redAccent, fontSize: 16),
+                          ),
+                        )
+                      ]
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-    );
+          ),
+        );
       },
     );
   }
 
   Widget _driverCard() {
     if (isLoadingDriver) {
-      return const Center(child: CircularProgressIndicator(color: Colors.white));
+      return const Center(
+          child: CircularProgressIndicator(color: Colors.white));
     }
 
     final name = driverData?['name'] ?? "Unknown Driver";
-    final rating = driverData?['rating']?.toString() ?? "New";
-    final totalRides = driverData?['totalRides'] ?? 0;
-    final cancelledRides = driverData?['cancelledRides'] ?? 0;
+    final rating =
+        (driverData?['driverRating'] as num?)?.toStringAsFixed(1) ?? "New";
 
-    String cancelStatus = "Rarely cancels";
+    final ridesOffered = (driverData?['ridesOffered'] as num?)?.toInt() ?? 0;
+    final ridesTaken = (driverData?['ridesTaken'] as num?)?.toInt() ?? 0;
+    final cancelledRides =
+        (driverData?['ridesCancelled'] as num?)?.toInt() ?? 0;
+
+    String cancelStatus = "Never cancels";
     Color cancelColor = Colors.greenAccent;
 
-    if (totalRides > 5) {
-      final ratio = cancelledRides / totalRides;
-      if (ratio > 0.15) {
+    final totalActivity = ridesOffered + ridesTaken + cancelledRides;
+
+    if (cancelledRides > 0 && totalActivity > 0) {
+      final ratio = cancelledRides / totalActivity;
+      if (ratio > 0.4) {
         cancelStatus = "Often cancels";
         cancelColor = Colors.redAccent;
-      } else if (ratio > 0.05) {
+      } else if (ratio > 0.1) {
         cancelStatus = "Sometimes cancels";
         cancelColor = Colors.orangeAccent;
+      } else {
+        cancelStatus = "Rarely cancels";
       }
     }
 
@@ -682,7 +783,7 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                 Row(
                   children: [
                     const Icon(Icons.star, color: Colors.amber, size: 14),
-                    Text(" $rating ($totalRides rides)",
+                    Text(" $rating ($ridesOffered rides)",
                         style: const TextStyle(
                             color: Colors.white70, fontSize: 12)),
                     const SizedBox(width: 10),

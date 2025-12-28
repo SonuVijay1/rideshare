@@ -407,6 +407,10 @@ class _OfferRideScreenState extends State<OfferRideScreen>
         rideData["createdAt"] = FieldValue.serverTimestamp();
         await collection.doc().set(rideData);
 
+        await FirebaseFirestore.instance.collection('users').doc(uid).update({
+          'ridesOffered': FieldValue.increment(1),
+        });
+
         if (!mounted) return;
         Navigator.pushReplacement(context,
             MaterialPageRoute(builder: (_) => RidePublishedScreen(rideData: rideData)));
@@ -501,6 +505,11 @@ class _OfferRideScreenState extends State<OfferRideScreen>
       }
 
       await batch.commit();
+
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'ridesOffered': FieldValue.increment(-1),
+        'ridesCancelled': FieldValue.increment(1),
+      });
 
       if (!mounted) return;
       Navigator.pushReplacement(

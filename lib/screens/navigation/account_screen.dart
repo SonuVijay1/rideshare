@@ -15,7 +15,8 @@ class AccountScreen extends StatefulWidget {
   State<AccountScreen> createState() => _AccountScreenState();
 }
 
-class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserver {
+class _AccountScreenState extends State<AccountScreen>
+    with WidgetsBindingObserver {
   String? uid;
 
   DateTime? _lastVerificationSentTime;
@@ -54,109 +55,114 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
     // Sync Firestore if Auth email is verified
     final user = FirebaseAuth.instance.currentUser;
     if (user != null && user.emailVerified && user.email != null) {
-        final userRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
-        final doc = await userRef.get();
-        final dbEmail = doc.data()?['email'];
+      final userRef =
+          FirebaseFirestore.instance.collection('users').doc(user.uid);
+      final doc = await userRef.get();
+      final dbEmail = doc.data()?['email'];
 
-        // Only update if the email in DB is missing or different
-        if (dbEmail != user.email) {
-          await userRef.set({
-            'email': user.email,
-            'updatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-        }
+      // Only update if the email in DB is missing or different
+      if (dbEmail != user.email) {
+        await userRef.set({
+          'email': user.email,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
     }
 
-    if (mounted) setState(() {}); 
+    if (mounted) setState(() {});
   }
 
   Future<void> _sendVerificationEmail(String email) async {
-  debugPrint("Attempting to send verification email to: $email");
+    debugPrint("Attempting to send verification email to: $email");
 
-  if (_isSendingEmail) return;
+    if (_isSendingEmail) return;
 
-  // Debounce → avoid spam
-  if (_lastVerificationSentTime != null &&
-      DateTime.now().difference(_lastVerificationSentTime!).inSeconds < 60) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Please wait a minute before resending verification email."))
-    );
-    return;
-  }
-
-  final user = FirebaseAuth.instance.currentUser;
-  if (user == null) return;
-
-  setState(() => _isSendingEmail = true);
-
-  try {
-    final normalizedEmail = email.trim().toLowerCase();
-
-    // 1️⃣ CHECK FIRESTORE USERS COLLECTION
-    final existing = await FirebaseFirestore.instance
-        .collection("users")
-        .where("email", isEqualTo: normalizedEmail)
-        .limit(1)
-        .get();
-
-    if (existing.docs.isNotEmpty) {
-      debugPrint("Email exists in Firestore → show dialog");
-      _showEmailInUseDialog();
+    // Debounce → avoid spam
+    if (_lastVerificationSentTime != null &&
+        DateTime.now().difference(_lastVerificationSentTime!).inSeconds < 60) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              "Please wait a minute before resending verification email.")));
       return;
     }
 
-    // 2️⃣ CHECK FIREBASE AUTH PROVIDERS
-    final methods = await FirebaseAuth.instance.fetchSignInMethodsForEmail(normalizedEmail);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
 
-    if (methods.isNotEmpty) {
-      debugPrint("Email exists in Firebase Auth → show dialog");
-      _showEmailInUseDialog();
-      return;
-    }
+    setState(() => _isSendingEmail = true);
 
-    debugPrint("Email is free. Sending verification…");
+    try {
+      final normalizedEmail = email.trim().toLowerCase();
 
-    await user.verifyBeforeUpdateEmail(normalizedEmail);
-    _lastVerificationSentTime = DateTime.now();
+      // 1️⃣ CHECK FIRESTORE USERS COLLECTION
+      final existing = await FirebaseFirestore.instance
+          .collection("users")
+          .where("email", isEqualTo: normalizedEmail)
+          .limit(1)
+          .get();
 
-    if (!mounted) return;
+      if (existing.docs.isNotEmpty) {
+        debugPrint("Email exists in Firestore → show dialog");
+        _showEmailInUseDialog();
+        return;
+      }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text("Verification Sent", style: TextStyle(color: Colors.white)),
-        content: Text(
-          "We sent a verification link to $email.\n\nOpen the email to complete update.",
-          style: const TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("OK", style: TextStyle(color: Colors.blueAccent)),
+      // 2️⃣ CHECK FIREBASE AUTH PROVIDERS
+      final methods = await FirebaseAuth.instance
+          .fetchSignInMethodsForEmail(normalizedEmail);
+
+      if (methods.isNotEmpty) {
+        debugPrint("Email exists in Firebase Auth → show dialog");
+        _showEmailInUseDialog();
+        return;
+      }
+
+      debugPrint("Email is free. Sending verification…");
+
+      await user.verifyBeforeUpdateEmail(normalizedEmail);
+      _lastVerificationSentTime = DateTime.now();
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          title: const Text("Verification Sent",
+              style: TextStyle(color: Colors.white)),
+          content: Text(
+            "We sent a verification link to $email.\n\nOpen the email to complete update.",
+            style: const TextStyle(color: Colors.white70),
           ),
-        ],
-      ),
-    );
-  } on FirebaseAuthException catch (e) {
-    if (e.code == 'requires-recent-login') {
-      _showReLoginDialog();
-    } else {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Error: ${e.message}")));
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child:
+                  const Text("OK", style: TextStyle(color: Colors.blueAccent)),
+            ),
+          ],
+        ),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'requires-recent-login') {
+        _showReLoginDialog();
+      } else {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("Error: ${e.message}")));
+      }
+    } finally {
+      if (mounted) setState(() => _isSendingEmail = false);
     }
-  } finally {
-    if (mounted) setState(() => _isSendingEmail = false);
   }
-}
 
   void _showReLoginDialog() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text("Security Update", style: TextStyle(color: Colors.white)),
+        title: const Text("Security Update",
+            style: TextStyle(color: Colors.white)),
         content: const Text(
           "To update your email, you need to have signed in recently. Please log out and sign in again.",
           style: TextStyle(color: Colors.white70),
@@ -171,10 +177,12 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
               Navigator.pop(context);
               await FirebaseAuth.instance.signOut();
               if (context.mounted) {
-                 Navigator.pushNamedAndRemoveUntil(context, "/login", (route) => false);
+                Navigator.pushNamedAndRemoveUntil(
+                    context, "/login", (route) => false);
               }
             },
-            child: const Text("Log Out", style: TextStyle(color: Colors.redAccent)),
+            child: const Text("Log Out",
+                style: TextStyle(color: Colors.redAccent)),
           ),
         ],
       ),
@@ -186,7 +194,8 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text("Email Already Linked", style: TextStyle(color: Colors.white)),
+        title: const Text("Email Already Linked",
+            style: TextStyle(color: Colors.white)),
         content: const Text(
           "This email address is already associated with another account.",
           style: TextStyle(color: Colors.white70),
@@ -202,201 +211,201 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
   }
 
   void _showUpdateEmailDialog() {
-  final emailC = TextEditingController();
+    final emailC = TextEditingController();
 
-  bool _isValidEmail(String email) {
-    final regex = RegExp(
-      r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-    );
-    return regex.hasMatch(email.trim());
-  }
+    bool _isValidEmail(String email) {
+      final regex = RegExp(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$");
+      return regex.hasMatch(email.trim());
+    }
 
-  showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      backgroundColor: const Color(0xFF1E1E1E),
-      title: const Text(
-        "Update Email",
-        style: TextStyle(color: Colors.white),
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text(
-            "Enter your email address. We will send a verification link.",
-            style: TextStyle(color: Colors.white70),
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text(
+          "Update Email",
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              "Enter your email address. We will send a verification link.",
+              style: TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 16),
+            _input("Email", emailC),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
           ),
-          const SizedBox(height: 16),
-          _input("Email", emailC),
+          TextButton(
+            onPressed: () async {
+              final email = emailC.text.trim();
+
+              if (email.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Email cannot be empty")),
+                );
+                return;
+              }
+
+              if (!_isValidEmail(email)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text("Please enter a valid email address")),
+                );
+                return;
+              }
+
+              if (email == FirebaseAuth.instance.currentUser?.email) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text("This is already your current email.")),
+                );
+                return;
+              }
+
+              Navigator.pop(context);
+              debugPrint("User requested email update to: $email");
+              _sendVerificationEmail(email);
+            },
+            child: const Text(
+              "Verify",
+              style: TextStyle(color: Colors.blueAccent),
+            ),
+          ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text("Cancel"),
-        ),
-        TextButton(
-          onPressed: () async {
-            final email = emailC.text.trim();
-
-            if (email.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Email cannot be empty")),
-              );
-              return;
-            }
-
-            if (!_isValidEmail(email)) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text("Please enter a valid email address")),
-              );
-              return;
-            }
-
-            if (email == FirebaseAuth.instance.currentUser?.email) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text("This is already your current email.")),
-              );
-              return;
-            }
-
-            Navigator.pop(context);
-            debugPrint("User requested email update to: $email");
-            _sendVerificationEmail(email);
-          },
-          child: const Text(
-            "Verify",
-            style: TextStyle(color: Colors.blueAccent),
-          ),
-        ),
-      ],
-    ),
-  );
-}
+    );
+  }
 
   Future<String?> _uploadFile(String path, String storagePath) async {
-  try {
-    debugPrint("🔥 Upload Started");
-    debugPrint("Selected File Path: $path");
-    debugPrint("Upload Target Path: $storagePath");
+    try {
+      debugPrint("🔥 Upload Started");
+      debugPrint("Selected File Path: $path");
+      debugPrint("Upload Target Path: $storagePath");
 
-    // Use default Firebase bucket (recommended)
-    final storage = FirebaseStorage.instance;
+      // Use default Firebase bucket (recommended)
+      final storage = FirebaseStorage.instance;
 
-    final ref = storage.ref(storagePath);
+      final ref = storage.ref(storagePath);
 
-    // Fix for Android NullPointerException: Explicitly provide metadata
-    final metadata = SettableMetadata(contentType: "image/jpeg");
+      // Fix for Android NullPointerException: Explicitly provide metadata
+      final metadata = SettableMetadata(contentType: "image/jpeg");
 
-    final uploadTask = await ref.putFile(File(path), metadata);
+      final uploadTask = await ref.putFile(File(path), metadata);
 
-    debugPrint("✅ Upload Success");
-    final url = await uploadTask.ref.getDownloadURL();
-    debugPrint("📸 File URL: $url");
+      debugPrint("✅ Upload Success");
+      final url = await uploadTask.ref.getDownloadURL();
+      debugPrint("📸 File URL: $url");
 
-    return url;
-  } catch (e) {
-    debugPrint("❌ UPLOAD ERROR: $e");
-    return null;
+      return url;
+    } catch (e) {
+      debugPrint("❌ UPLOAD ERROR: $e");
+      return null;
+    }
   }
-}
-
 
   Future<void> _pickAndUpload(String fieldName, String storageFolder) async {
-  try {
-    final picker = ImagePicker();
-    // 1. Pick Image with initial compression
-    final picked = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 80, // Initial compression to save memory
-      maxWidth: 1024,   // Resize large images immediately
-    );
-
-    if (picked == null) return;
-
-    // 2. Crop & Compress
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: picked.path,
-      compressQuality: 70, // High compression for storage optimization
-      maxWidth: 1024,      // Ensure uploaded file isn't huge
-      maxHeight: 1024,
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Crop & Upload',
-          toolbarColor: Colors.white, // High contrast toolbar
-          toolbarWidgetColor: Colors.black, // Black icons (Checkmark will be visible)
-          activeControlsWidgetColor: Colors.deepPurple,
-          statusBarColor: Colors.black,
-          initAspectRatio: CropAspectRatioPreset.square, // Default to square for profile
-          lockAspectRatio: false,
-          backgroundColor: Colors.black,
-          dimmedLayerColor: const Color(0x99000000),
-          cropFrameColor: Colors.white,
-          cropGridColor: Colors.white54,
-          hideBottomControls: false,
-          showCropGrid: true,
-        ),
-        IOSUiSettings(
-          title: 'Edit Photo',
-          doneButtonTitle: 'Upload',
-          cancelButtonTitle: 'Cancel',
-        ),
-      ],
-    );
-
-    if (cropped == null) return; // User cancelled crop
-
-    // Fetch old URL to delete later
-    String? oldUrl;
     try {
-      final doc = await FirebaseFirestore.instance.collection("users").doc(uid).get();
-      oldUrl = doc.data()?[fieldName];
-    } catch (e) {
-      debugPrint("Error fetching old URL: $e");
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Uploading...")),
-    );
-
-    final url = await _uploadFile(
-      cropped.path,
-      "users/$uid/$storageFolder/${DateTime.now()}",
-    );
-
-    if (url == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Upload failed")),
+      final picker = ImagePicker();
+      // 1. Pick Image with initial compression
+      final picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80, // Initial compression to save memory
+        maxWidth: 1024, // Resize large images immediately
       );
-      return;
-    }
 
-    await FirebaseFirestore.instance.collection("users").doc(uid).set(
-      {fieldName: url},
-      SetOptions(merge: true),
-    );
+      if (picked == null) return;
 
-    // Delete old image if exists
-    if (oldUrl != null) {
+      // 2. Crop & Compress
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: picked.path,
+        compressQuality: 70, // High compression for storage optimization
+        maxWidth: 1024, // Ensure uploaded file isn't huge
+        maxHeight: 1024,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Crop & Upload',
+            toolbarColor: Colors.white, // High contrast toolbar
+            toolbarWidgetColor:
+                Colors.black, // Black icons (Checkmark will be visible)
+            activeControlsWidgetColor: Colors.deepPurple,
+            statusBarColor: Colors.black,
+            initAspectRatio:
+                CropAspectRatioPreset.square, // Default to square for profile
+            lockAspectRatio: false,
+            backgroundColor: Colors.black,
+            dimmedLayerColor: const Color(0x99000000),
+            cropFrameColor: Colors.white,
+            cropGridColor: Colors.white54,
+            hideBottomControls: false,
+            showCropGrid: true,
+          ),
+          IOSUiSettings(
+            title: 'Edit Photo',
+            doneButtonTitle: 'Upload',
+            cancelButtonTitle: 'Cancel',
+          ),
+        ],
+      );
+
+      if (cropped == null) return; // User cancelled crop
+
+      // Fetch old URL to delete later
+      String? oldUrl;
       try {
-        await FirebaseStorage.instance.refFromURL(oldUrl).delete();
-        debugPrint("Deleted old image: $oldUrl");
+        final doc =
+            await FirebaseFirestore.instance.collection("users").doc(uid).get();
+        oldUrl = doc.data()?[fieldName];
       } catch (e) {
-        debugPrint("Failed to delete old image: $e");
+        debugPrint("Error fetching old URL: $e");
       }
-    }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Uploaded successfully")),
-    );
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Upload error: $e")),
-    );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Uploading...")),
+      );
+
+      final url = await _uploadFile(
+        cropped.path,
+        "users/$uid/$storageFolder/${DateTime.now()}",
+      );
+
+      if (url == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Upload failed")),
+        );
+        return;
+      }
+
+      await FirebaseFirestore.instance.collection("users").doc(uid).set(
+        {fieldName: url},
+        SetOptions(merge: true),
+      );
+
+      // Delete old image if exists
+      if (oldUrl != null) {
+        try {
+          await FirebaseStorage.instance.refFromURL(oldUrl).delete();
+          debugPrint("Deleted old image: $oldUrl");
+        } catch (e) {
+          debugPrint("Failed to delete old image: $e");
+        }
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Uploaded successfully")),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Upload error: $e")),
+      );
+    }
   }
-}
 
   double _profileCompletion(Map<String, dynamic> d) {
     int done = 0;
@@ -439,8 +448,8 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
               final name = data['name'] ?? "New User";
               final authPhone = FirebaseAuth.instance.currentUser?.phoneNumber;
               final phone = (authPhone != null && authPhone.isNotEmpty)
-                    ? authPhone
-                    : (data['phone'] ?? "Not Added");
+                  ? authPhone
+                  : (data['phone'] ?? "Not Added");
               final email = data['email'] ?? "Not Added";
               final city = data['city'] ?? "Not Added";
               final gender = data['gender'] ?? "Not Specified";
@@ -452,9 +461,12 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
                   ? DateFormat("MMM yyyy").format(createdAt.toDate())
                   : "Unknown";
 
-              final ridesTaken = data['ridesTaken'] ?? 0;
-              final ridesOffered = data['ridesOffered'] ?? 0;
-              final pRating = (data['passengerRating'] as num?)?.toDouble() ?? 0.0;
+              final ridesTaken = (data['ridesTaken'] as num?)?.toInt() ?? 0;
+              final ridesOffered = (data['ridesOffered'] as num?)?.toInt() ?? 0;
+              final ridesCancelled =
+                  (data['ridesCancelled'] as num?)?.toInt() ?? 0;
+              final pRating =
+                  (data['passengerRating'] as num?)?.toDouble() ?? 0.0;
               final dRating = (data['driverRating'] as num?)?.toDouble() ?? 0.0;
 
               final pic = data['profilePic'];
@@ -467,6 +479,8 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
               final verified = safeData['verified'] == true;
               final completion = _profileCompletion(safeData);
 
+              final cancelStatus = _calculateCancellationStatus(
+                  ridesTaken, ridesOffered, ridesCancelled);
 
               return Column(
                 children: [
@@ -497,7 +511,6 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
                           ],
                         ),
                         const SizedBox(height: 20),
-
                         Row(
                           children: [
                             GestureDetector(
@@ -527,8 +540,8 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
                                     style: const TextStyle(
                                         color: Colors.white, fontSize: 18)),
                                 Text(phone,
-                                    style: const TextStyle(
-                                        color: Colors.white54)),
+                                    style:
+                                        const TextStyle(color: Colors.white54)),
                                 const SizedBox(height: 4),
                                 Text("Joined $joined",
                                     style: const TextStyle(
@@ -543,9 +556,7 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
                                     style: TextStyle(color: Colors.white)))
                           ],
                         ),
-
                         const SizedBox(height: 16),
-
                         LinearProgressIndicator(
                           value: completion,
                           color: Colors.greenAccent,
@@ -567,47 +578,53 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
                       color: Colors.white,
                       backgroundColor: Colors.black,
                       child: SingleChildScrollView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.all(18),
-                        child: Column(
-                          children: [
-                            _statsCard(ridesTaken, ridesOffered, pRating, dRating),
-                            const SizedBox(height: 20),
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(18),
+                          child: Column(
+                            children: [
+                              _statsCard(
+                                  ridesTaken,
+                                  ridesOffered,
+                                  ridesCancelled,
+                                  pRating,
+                                  dRating,
+                                  cancelStatus),
+                              const SizedBox(height: 20),
 
-                            _tile("Date of Birth", dob),
-                          _mobileTile(phone),
-                          _emailTile(email), // Pass Firestore email as fallback
-                          _tile("Gender", gender),
-                          _tile("Age", age),
-                          _tile("City", city),
+                              _tile("Date of Birth", dob),
+                              _mobileTile(phone),
+                              _emailTile(
+                                  email), // Pass Firestore email as fallback
+                              _tile("Gender", gender),
+                              _tile("Age", age),
+                              _tile("City", city),
 
-                          const SizedBox(height: 20),
+                              const SizedBox(height: 20),
 
-                          // DOCUMENTS
-                          section("Identity Verification"),
-                          _docButton(
-                              "Upload Aadhaar", aadhaar, "aadhaarUrl", "aadhaar", aadhaarVerified),
-                          _docButton("Upload Driving License", license,
-                              "licenseUrl", "license", licenseVerified),
+                              // DOCUMENTS
+                              section("Identity Verification"),
+                              _docButton("Upload Aadhaar", aadhaar,
+                                  "aadhaarUrl", "aadhaar", aadhaarVerified),
+                              _docButton("Upload Driving License", license,
+                                  "licenseUrl", "license", licenseVerified),
 
-                          const SizedBox(height: 20),
+                              const SizedBox(height: 20),
 
-                          section("Emergency Contact"),
-                          _emergencyTile(safeData),
+                              section("Emergency Contact"),
+                              _emergencyTile(safeData),
 
-                          const SizedBox(height: 25),
+                              const SizedBox(height: 25),
 
-                          _logoutButton(() async {
-                            await FirebaseAuth.instance.signOut();
-                            if (context.mounted) {
-                              Navigator.pushNamedAndRemoveUntil(
-                                  context, "/login", (route) => false);
-                            }
-                          }),
-                          const SizedBox(height: 25),
-                        ],
-                        )
-                      ),
+                              _logoutButton(() async {
+                                await FirebaseAuth.instance.signOut();
+                                if (context.mounted) {
+                                  Navigator.pushNamedAndRemoveUntil(
+                                      context, "/login", (route) => false);
+                                }
+                              }),
+                              const SizedBox(height: 25),
+                            ],
+                          )),
                     ),
                   )
                 ],
@@ -638,8 +655,10 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
     final user = FirebaseAuth.instance.currentUser;
     final authEmail = user?.email;
     final hasAuthEmail = authEmail != null && authEmail.isNotEmpty;
-    
-    final displayEmail = hasAuthEmail ? authEmail : (firestoreEmail == "Not Added" ? "Not Added" : firestoreEmail);
+
+    final displayEmail = hasAuthEmail
+        ? authEmail
+        : (firestoreEmail == "Not Added" ? "Not Added" : firestoreEmail);
     final isVerified = hasAuthEmail && (user?.emailVerified ?? false);
 
     return Container(
@@ -665,21 +684,31 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
                 } else {
                   await user?.sendEmailVerification();
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Verification email sent.")));
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text("Verification email sent.")));
                   }
                 }
               },
-              child: const Text("Verify", style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+              child: const Text("Verify",
+                  style: TextStyle(
+                      color: Colors.orangeAccent,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12)),
             )
           else
             GestureDetector(
               onTap: _showUpdateEmailDialog,
-              child: const Text("Add Email", style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+              child: const Text("Add Email",
+                  style: TextStyle(
+                      color: Colors.blueAccent,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12)),
             ),
           if (hasAuthEmail) ...[
             const SizedBox(width: 12),
             GestureDetector(
-              onTap: _showUpdateEmailDialog, // Re-use link dialog which handles update if already linked
+              onTap:
+                  _showUpdateEmailDialog, // Re-use link dialog which handles update if already linked
               child: const Icon(Icons.edit, color: Colors.white70, size: 18),
             ),
           ]
@@ -707,7 +736,20 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
     );
   }
 
-  Widget _statsCard(int taken, int offered, double pRate, double dRate) {
+  String _calculateCancellationStatus(int taken, int offered, int cancelled) {
+    if (cancelled == 0) return "Never";
+    final total = taken + offered + cancelled;
+    if (total == 0) return "Never";
+
+    final ratio = cancelled / total;
+    if (ratio >= 1.0) return "Always";
+    if (ratio > 0.4) return "Often";
+    if (ratio > 0.1) return "Sometimes";
+    return "Rarely";
+  }
+
+  Widget _statsCard(int taken, int offered, int cancelled, double pRate,
+      double dRate, String cancelStatus) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -721,6 +763,15 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
             children: [
               _statItem("Rides Taken", "$taken"),
               _statItem("Rides Offered", "$offered"),
+            ],
+          ),
+          const Divider(color: Colors.white10, height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _statItem("Cancelled", "$cancelled"),
+              _statItem("Cancel Freq", cancelStatus,
+                  icon: Icons.info_outline, iconColor: Colors.white70),
             ],
           ),
           const Divider(color: Colors.white10, height: 24),
@@ -771,16 +822,24 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
         ),
       );
 
-  Widget _docButton(String title, String? url, String field, String folder, bool isVerified) {
+  Widget _docButton(
+      String title, String? url, String field, String folder, bool isVerified) {
     return ListTile(
       tileColor: const Color(0xFF1E1E1E),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       title: Text(title, style: const TextStyle(color: Colors.white)),
       subtitle: Text(
-        url == null ? "Not Uploaded" : (isVerified ? "Verified" : "Pending Verification"),
-        style: TextStyle(color: url == null ? Colors.red : (isVerified ? Colors.greenAccent : Colors.orangeAccent)),
+        url == null
+            ? "Not Uploaded"
+            : (isVerified ? "Verified" : "Pending Verification"),
+        style: TextStyle(
+            color: url == null
+                ? Colors.red
+                : (isVerified ? Colors.greenAccent : Colors.orangeAccent)),
       ),
-      trailing: isVerified ? const Icon(Icons.verified, color: Colors.greenAccent) : const Icon(Icons.upload, color: Colors.white),
+      trailing: isVerified
+          ? const Icon(Icons.verified, color: Colors.greenAccent)
+          : const Icon(Icons.upload, color: Colors.white),
       onTap: () => _pickAndUpload(field, folder),
     );
   }
@@ -865,8 +924,7 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Text("Logout",
                   style: TextStyle(
-                      color: Colors.redAccent,
-                      fontWeight: FontWeight.bold)),
+                      color: Colors.redAccent, fontWeight: FontWeight.bold)),
             )),
       );
 
@@ -886,94 +944,92 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
         shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
         builder: (context) {
-          return StatefulBuilder(
-            builder: (context, setState) {
-              return Padding(
-                  padding: EdgeInsets.only(
-                      bottom: MediaQuery.of(context).viewInsets.bottom,
-                      left: 20,
-                      right: 20,
-                      top: 20),
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                const Text("Edit Profile",
-                    style: TextStyle(color: Colors.white, fontSize: 18)),
-                const SizedBox(height: 20),
-                _input("Name", n),
-                const SizedBox(height: 10),
-                GestureDetector(
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: DateTime.now()
-                          .subtract(const Duration(days: 365 * 18)),
-                      firstDate: DateTime(1900),
-                      lastDate: DateTime.now(),
-                      builder: (context, child) => Theme(
-                        data: Theme.of(context).copyWith(
-                          colorScheme: const ColorScheme.dark(
-                              primary: Colors.white, onSurface: Colors.white),
-                          dialogBackgroundColor: const Color(0xFF1E1E1E),
+          return StatefulBuilder(builder: (context, setState) {
+            return Padding(
+                padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(context).viewInsets.bottom,
+                    left: 20,
+                    right: 20,
+                    top: 20),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  const Text("Edit Profile",
+                      style: TextStyle(color: Colors.white, fontSize: 18)),
+                  const SizedBox(height: 20),
+                  _input("Name", n),
+                  const SizedBox(height: 10),
+                  GestureDetector(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now()
+                            .subtract(const Duration(days: 365 * 18)),
+                        firstDate: DateTime(1900),
+                        lastDate: DateTime.now(),
+                        builder: (context, child) => Theme(
+                          data: Theme.of(context).copyWith(
+                            colorScheme: const ColorScheme.dark(
+                                primary: Colors.white, onSurface: Colors.white),
+                            dialogBackgroundColor: const Color(0xFF1E1E1E),
+                          ),
+                          child: child!,
                         ),
-                        child: child!,
-                      ),
-                    );
-                    if (picked != null) {
-                      dobC.text = DateFormat("yyyy-MM-dd").format(picked);
-                    }
-                  },
-                  child: AbsorbPointer(child: _input("Date of Birth", dobC)),
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                    value: gender,
-                    dropdownColor: Colors.black,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: _dec("Gender"),
-                    items: const [
-                      DropdownMenuItem(
-                          value: "Male",
-                          child: Text("Male",
-                              style: TextStyle(color: Colors.white))),
-                      DropdownMenuItem(
-                          value: "Female",
-                          child: Text("Female",
-                              style: TextStyle(color: Colors.white))),
-                      DropdownMenuItem(
-                          value: "Other",
-                          child: Text("Other",
-                              style: TextStyle(color: Colors.white))),
-                    ],
-                    onChanged: (v) => setState(() => gender = v!)),
-                const SizedBox(height: 10),
-                _input("Age", a),
-                const SizedBox(height: 10),
-                _input("City", c),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black),
-                    onPressed: () async {
-                      await FirebaseFirestore.instance
-                          .collection("users")
-                          .doc(uid!)
-                          .set({
-                        "name": n.text.trim(),
-                        "gender": gender,
-                        "city": c.text.trim(),
-                        "age": int.tryParse(a.text.trim()),
-                        "dob": dobC.text.trim(),
-                      }, SetOptions(merge: true));
-
-                      if (context.mounted) Navigator.pop(context);
+                      );
+                      if (picked != null) {
+                        dobC.text = DateFormat("yyyy-MM-dd").format(picked);
+                      }
                     },
-                    child: const Padding(
-                      padding: EdgeInsets.all(10),
-                      child: Text("Save"),
-                    ))
-              ]));
-            }
-          );
+                    child: AbsorbPointer(child: _input("Date of Birth", dobC)),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                      value: gender,
+                      dropdownColor: Colors.black,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: _dec("Gender"),
+                      items: const [
+                        DropdownMenuItem(
+                            value: "Male",
+                            child: Text("Male",
+                                style: TextStyle(color: Colors.white))),
+                        DropdownMenuItem(
+                            value: "Female",
+                            child: Text("Female",
+                                style: TextStyle(color: Colors.white))),
+                        DropdownMenuItem(
+                            value: "Other",
+                            child: Text("Other",
+                                style: TextStyle(color: Colors.white))),
+                      ],
+                      onChanged: (v) => setState(() => gender = v!)),
+                  const SizedBox(height: 10),
+                  _input("Age", a),
+                  const SizedBox(height: 10),
+                  _input("City", c),
+                  const SizedBox(height: 20),
+                  ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black),
+                      onPressed: () async {
+                        await FirebaseFirestore.instance
+                            .collection("users")
+                            .doc(uid!)
+                            .set({
+                          "name": n.text.trim(),
+                          "gender": gender,
+                          "city": c.text.trim(),
+                          "age": int.tryParse(a.text.trim()),
+                          "dob": dobC.text.trim(),
+                        }, SetOptions(merge: true));
+
+                        if (context.mounted) Navigator.pop(context);
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.all(10),
+                        child: Text("Save"),
+                      ))
+                ]));
+          });
         });
   }
 
@@ -982,6 +1038,5 @@ class _AccountScreenState extends State<AccountScreen> with WidgetsBindingObserv
       labelStyle: const TextStyle(color: Colors.white54),
       filled: true,
       fillColor: Colors.black,
-      border:
-          OutlineInputBorder(borderRadius: BorderRadius.circular(12)));
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)));
 }
