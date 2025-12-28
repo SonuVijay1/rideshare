@@ -161,6 +161,7 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
       final userDoc =
           await FirebaseFirestore.instance.collection('users').doc(uid).get();
       final userName = userDoc.data()?['name'] ?? "Unknown User";
+      final userPic = userDoc.data()?['profilePic'];
 
       // Run transaction to ensure seat availability
       await FirebaseFirestore.instance.runTransaction((transaction) async {
@@ -193,6 +194,7 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
         bookedUsers.add({
           'uid': uid,
           'name': userName,
+          'profilePic': userPic,
           'seats': selectedSeats,
           'bookedAt': DateTime.now().toString()
         });
@@ -647,12 +649,19 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                                     final name = user is Map
                                         ? (user['name'] ?? 'User')
                                         : 'User';
+                                    final pic =
+                                        user is Map ? user['profilePic'] : null;
                                     return Chip(
                                       backgroundColor: Colors.white10,
-                                      avatar: const CircleAvatar(
+                                      avatar: CircleAvatar(
                                         backgroundColor: Colors.grey,
-                                        child: Icon(Icons.person,
-                                            size: 12, color: Colors.white),
+                                        backgroundImage: pic != null
+                                            ? NetworkImage(pic)
+                                            : null,
+                                        child: pic == null
+                                            ? const Icon(Icons.person,
+                                                size: 12, color: Colors.white)
+                                            : null,
                                       ),
                                       label: Text(
                                         name,
