@@ -15,10 +15,10 @@ class _MainNavState extends State<MainNav> {
   int _index = 0;
 
   final screens = [
-    const HomeScreen(),        // Ride
-    const TripHistoryScreen(), // Trips
-    const MessagesScreen(),    // Messages
-    const AccountScreen(),     // Account
+    const HomeScreen(), // Ride
+    TripHistoryScreen(), // Trips
+    const MessagesScreen(), // Messages
+    const AccountScreen(), // Account
   ];
 
   @override
@@ -28,13 +28,11 @@ class _MainNavState extends State<MainNav> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _index,
         onTap: (i) => setState(() => _index = i),
-
         backgroundColor: Colors.black,
         selectedItemColor: Colors.white,
         unselectedItemColor: Colors.white54,
         type: BottomNavigationBarType.fixed,
         elevation: 10,
-
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.directions_car),

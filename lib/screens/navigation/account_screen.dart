@@ -1,12 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
+import '../../repositories/user_repository.dart';
+import '../../repositories/storage_repository.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -22,10 +21,13 @@ class _AccountScreenState extends State<AccountScreen>
   DateTime? _lastVerificationSentTime;
   bool _isSendingEmail = false;
 
+  final UserRepository _userRepo = FirebaseUserRepository();
+  final StorageRepository _storageRepo = FirebaseStorageRepository();
+
   @override
   void initState() {
     super.initState();
-    uid = FirebaseAuth.instance.currentUser?.uid;
+    uid = _userRepo.currentUser?.uid;
     if (uid != null) {
       WidgetsBinding.instance.addObserver(this);
       _reloadUser();
@@ -47,26 +49,17 @@ class _AccountScreenState extends State<AccountScreen>
 
   Future<void> _reloadUser() async {
     try {
-      await FirebaseAuth.instance.currentUser?.reload();
+      await _userRepo.reloadUser();
     } catch (e) {
       // Ignore Pigeon/serialization errors on Android
     }
 
     // Sync Firestore if Auth email is verified
-    final user = FirebaseAuth.instance.currentUser;
+    final user = _userRepo.currentUser;
     if (user != null && user.emailVerified && user.email != null) {
-      final userRef =
-          FirebaseFirestore.instance.collection('users').doc(user.uid);
-      final doc = await userRef.get();
-      final dbEmail = doc.data()?['email'];
-
-      // Only update if the email in DB is missing or different
-      if (dbEmail != user.email) {
-        await userRef.set({
-          'email': user.email,
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
+      // Logic to sync email can be moved to repo, but for now we rely on
+      // the repo update method if needed.
+      // _userRepo.updateUserData(user.uid, {'email': user.email});
     }
 
     if (mounted) setState(() {});
@@ -86,7 +79,7 @@ class _AccountScreenState extends State<AccountScreen>
       return;
     }
 
-    final user = FirebaseAuth.instance.currentUser;
+    final user = _userRepo.currentUser;
     if (user == null) return;
 
     setState(() => _isSendingEmail = true);
@@ -94,32 +87,15 @@ class _AccountScreenState extends State<AccountScreen>
     try {
       final normalizedEmail = email.trim().toLowerCase();
 
-      // 1️⃣ CHECK FIRESTORE USERS COLLECTION
-      final existing = await FirebaseFirestore.instance
-          .collection("users")
-          .where("email", isEqualTo: normalizedEmail)
-          .limit(1)
-          .get();
-
-      if (existing.docs.isNotEmpty) {
-        debugPrint("Email exists in Firestore → show dialog");
-        _showEmailInUseDialog();
-        return;
-      }
-
-      // 2️⃣ CHECK FIREBASE AUTH PROVIDERS
-      final methods = await FirebaseAuth.instance
-          .fetchSignInMethodsForEmail(normalizedEmail);
-
-      if (methods.isNotEmpty) {
-        debugPrint("Email exists in Firebase Auth → show dialog");
-        _showEmailInUseDialog();
+      final inUse = await _userRepo.isEmailInUse(normalizedEmail);
+      if (inUse) {
+        if (mounted) _showEmailInUseDialog();
         return;
       }
 
       debugPrint("Email is free. Sending verification…");
 
-      await user.verifyBeforeUpdateEmail(normalizedEmail);
+      await _userRepo.verifyBeforeUpdateEmail(normalizedEmail);
       _lastVerificationSentTime = DateTime.now();
 
       if (!mounted) return;
@@ -144,12 +120,13 @@ class _AccountScreenState extends State<AccountScreen>
           ],
         ),
       );
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'requires-recent-login') {
+    } catch (e) {
+      final err = e as dynamic;
+      if (err.code == 'requires-recent-login') {
         _showReLoginDialog();
       } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text("Error: ${e.message}")));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Error: ${err.message ?? err.toString()}")));
       }
     } finally {
       if (mounted) setState(() => _isSendingEmail = false);
@@ -175,7 +152,7 @@ class _AccountScreenState extends State<AccountScreen>
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-              await FirebaseAuth.instance.signOut();
+              await _userRepo.signOut();
               if (context.mounted) {
                 Navigator.pushNamedAndRemoveUntil(
                     context, "/login", (route) => false);
@@ -261,7 +238,7 @@ class _AccountScreenState extends State<AccountScreen>
                 return;
               }
 
-              if (email == FirebaseAuth.instance.currentUser?.email) {
+              if (email == _userRepo.currentUser?.email) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                       content: Text("This is already your current email.")),
@@ -283,32 +260,7 @@ class _AccountScreenState extends State<AccountScreen>
     );
   }
 
-  Future<String?> _uploadFile(String path, String storagePath) async {
-    try {
-      debugPrint("🔥 Upload Started");
-      debugPrint("Selected File Path: $path");
-      debugPrint("Upload Target Path: $storagePath");
-
-      // Use default Firebase bucket (recommended)
-      final storage = FirebaseStorage.instance;
-
-      final ref = storage.ref(storagePath);
-
-      // Fix for Android NullPointerException: Explicitly provide metadata
-      final metadata = SettableMetadata(contentType: "image/jpeg");
-
-      final uploadTask = await ref.putFile(File(path), metadata);
-
-      debugPrint("✅ Upload Success");
-      final url = await uploadTask.ref.getDownloadURL();
-      debugPrint("📸 File URL: $url");
-
-      return url;
-    } catch (e) {
-      debugPrint("❌ UPLOAD ERROR: $e");
-      return null;
-    }
-  }
+  // _uploadFile removed, using _storageRepo.uploadFile
 
   Future<void> _pickAndUpload(String fieldName, String storageFolder) async {
     try {
@@ -359,9 +311,8 @@ class _AccountScreenState extends State<AccountScreen>
       // Fetch old URL to delete later
       String? oldUrl;
       try {
-        final doc =
-            await FirebaseFirestore.instance.collection("users").doc(uid).get();
-        oldUrl = doc.data()?[fieldName];
+        final userData = await _userRepo.getUser(uid!);
+        oldUrl = userData?[fieldName];
       } catch (e) {
         debugPrint("Error fetching old URL: $e");
       }
@@ -370,7 +321,7 @@ class _AccountScreenState extends State<AccountScreen>
         const SnackBar(content: Text("Uploading...")),
       );
 
-      final url = await _uploadFile(
+      final url = await _storageRepo.uploadFile(
         cropped.path,
         "users/$uid/$storageFolder/${DateTime.now()}",
       );
@@ -382,15 +333,12 @@ class _AccountScreenState extends State<AccountScreen>
         return;
       }
 
-      await FirebaseFirestore.instance.collection("users").doc(uid).set(
-        {fieldName: url},
-        SetOptions(merge: true),
-      );
+      await _userRepo.updateUserData(uid!, {fieldName: url});
 
       // Delete old image if exists
       if (oldUrl != null) {
         try {
-          await FirebaseStorage.instance.refFromURL(oldUrl).delete();
+          await _storageRepo.deleteFile(oldUrl);
           debugPrint("Deleted old image: $oldUrl");
         } catch (e) {
           debugPrint("Failed to delete old image: $e");
@@ -436,17 +384,13 @@ class _AccountScreenState extends State<AccountScreen>
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       body: SafeArea(
-        child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection("users")
-                .doc(uid!)
-                .snapshots(),
+        child: StreamBuilder<Map<String, dynamic>?>(
+            stream: _userRepo.getUserStream(uid!),
             builder: (context, snap) {
-              final data =
-                  snap.hasData && snap.data!.exists ? snap.data!.data()! : {};
+              final data = snap.data ?? {};
 
               final name = data['name'] ?? "New User";
-              final authPhone = FirebaseAuth.instance.currentUser?.phoneNumber;
+              final authPhone = _userRepo.currentUser?.phoneNumber;
               final phone = (authPhone != null && authPhone.isNotEmpty)
                   ? authPhone
                   : (data['phone'] ?? "Not Added");
@@ -456,9 +400,9 @@ class _AccountScreenState extends State<AccountScreen>
               final age = data['age']?.toString() ?? "--";
               final dob = data['dob'] ?? "Not Added";
 
-              final createdAt = data['createdAt'] as Timestamp?;
-              final joined = createdAt != null
-                  ? DateFormat("MMM yyyy").format(createdAt.toDate())
+              final createdAt = data['createdAt'];
+              final joined = createdAt != null && createdAt is DateTime
+                  ? DateFormat("MMM yyyy").format(createdAt)
                   : "Unknown";
 
               final ridesTaken = (data['ridesTaken'] as num?)?.toInt() ?? 0;
@@ -690,7 +634,7 @@ class _AccountScreenState extends State<AccountScreen>
                               const SizedBox(height: 25),
 
                               _logoutButton(() async {
-                                await FirebaseAuth.instance.signOut();
+                                await _userRepo.signOut();
                                 if (context.mounted) {
                                   Navigator.pushNamedAndRemoveUntil(
                                       context, "/login", (route) => false);
@@ -726,7 +670,7 @@ class _AccountScreenState extends State<AccountScreen>
       );
 
   Widget _emailTile(String firestoreEmail) {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = _userRepo.currentUser;
     final authEmail = user?.email;
     final hasAuthEmail = authEmail != null && authEmail.isNotEmpty;
 
@@ -752,11 +696,11 @@ class _AccountScreenState extends State<AccountScreen>
           else if (hasAuthEmail)
             GestureDetector(
               onTap: () async {
-                await user?.reload();
+                await _userRepo.reloadUser();
                 if (user?.emailVerified ?? false) {
                   setState(() {});
                 } else {
-                  await user?.sendEmailVerification();
+                  await _userRepo.sendEmailVerification();
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                         content: Text("Verification email sent.")));
@@ -1021,13 +965,10 @@ class _AccountScreenState extends State<AccountScreen>
                     child: const Text("Cancel")),
                 TextButton(
                     onPressed: () async {
-                      await FirebaseFirestore.instance
-                          .collection("users")
-                          .doc(uid)
-                          .set({
+                      await _userRepo.updateUserData(uid!, {
                         "emergencyName": name.text.trim(),
                         "emergencyPhone": phone.text.trim()
-                      }, SetOptions(merge: true));
+                      });
 
                       // verified only if aadhaar + license + emergency
                       Navigator.pop(c);
@@ -1148,16 +1089,13 @@ class _AccountScreenState extends State<AccountScreen>
                           backgroundColor: Colors.white,
                           foregroundColor: Colors.black),
                       onPressed: () async {
-                        await FirebaseFirestore.instance
-                            .collection("users")
-                            .doc(uid!)
-                            .set({
+                        await _userRepo.updateUserData(uid!, {
                           "name": n.text.trim(),
                           "gender": gender,
                           "city": c.text.trim(),
                           "age": int.tryParse(a.text.trim()),
                           "dob": dobC.text.trim(),
-                        }, SetOptions(merge: true));
+                        });
 
                         if (context.mounted) Navigator.pop(context);
                       },

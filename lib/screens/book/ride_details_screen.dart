@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:rideshareApp/screens/offer/ride_published_screen.dart';
+import '../../repositories/ride_repository.dart';
+import '../../repositories/user_repository.dart';
 
 class RideDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> rideData;
-  final DocumentReference rideReference;
+  final String rideId;
+  final String driverId;
   final String? bookingId;
   final int? existingBookedSeats;
 
   const RideDetailsScreen({
     super.key,
     required this.rideData,
-    required this.rideReference,
+    required this.rideId,
+    required this.driverId,
     this.bookingId,
     this.existingBookedSeats,
   });
@@ -35,6 +37,9 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
   String? _localBookingId;
   int? _localBookedSeats;
 
+  final RideRepository _rideRepo = FirebaseRideRepository();
+  final UserRepository _userRepo = FirebaseUserRepository();
+
   @override
   void initState() {
     super.initState();
@@ -55,26 +60,16 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
     // If explicitly passed, no need to check
     if (widget.bookingId != null) return;
 
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = _userRepo.currentUser?.uid;
     if (uid == null) return;
 
     try {
-      final q = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('bookedTrips')
-          .where('rideId', isEqualTo: widget.rideReference.id)
-          .limit(1)
-          .get();
-
-      if (q.docs.isNotEmpty) {
-        final doc = q.docs.first;
-        final data = doc.data();
-        debugPrint("RideDetailsScreen: Found existing booking ${doc.id}");
+      final booking = await _rideRepo.getBookingForRide(uid, widget.rideId);
+      if (booking != null) {
         if (mounted) {
           setState(() {
-            _localBookingId = doc.id;
-            _localBookedSeats = data['seatsBooked'] as int?;
+            _localBookingId = booking['bookingId'];
+            _localBookedSeats = booking['seatsBooked'] as int?;
             // Update selected seats to match what user already has
             if (_localBookedSeats != null) {
               selectedSeats = _localBookedSeats!;
@@ -89,9 +84,8 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
 
   Future<void> _fetchFreshRideData() async {
     try {
-      final doc = await widget.rideReference.get();
-      if (doc.exists) {
-        final data = doc.data() as Map<String, dynamic>;
+      final data = await _rideRepo.getRide(widget.driverId, widget.rideId);
+      if (data != null) {
         setState(() {
           maxSeatsAvailable = data['seatsAvailable'] ?? 0;
         });
@@ -101,12 +95,10 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
 
   Future<void> _fetchDriverDetails() async {
     try {
-      // rideReference is users/{uid}/driverTrips/{rideId}
-      // parent is driverTrips, parent.parent is users/{uid}
-      final driverDoc = await widget.rideReference.parent.parent!.get();
-      if (driverDoc.exists) {
+      final data = await _userRepo.getUser(widget.driverId);
+      if (data != null) {
         setState(() {
-          driverData = driverDoc.data() as Map<String, dynamic>;
+          driverData = data;
         });
       }
     } catch (e) {
@@ -149,7 +141,7 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
 
     setState(() => isBooking = true);
     try {
-      final user = FirebaseAuth.instance.currentUser;
+      final user = _userRepo.currentUser;
       if (user == null) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Please login to book")));
@@ -158,88 +150,24 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
       final uid = user.uid;
 
       // Fetch user name for booking record
-      final userDoc =
-          await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      final userName = userDoc.data()?['name'] ?? "Unknown User";
-      final userPic = userDoc.data()?['profilePic'];
+      final userData = await _userRepo.getUser(uid);
+      final userName = userData?['name'] ?? "Unknown User";
+      final userPic = userData?['profilePic'];
 
-      // Run transaction to ensure seat availability
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        final rideSnapshot = await transaction.get(widget.rideReference);
-        if (!rideSnapshot.exists) throw Exception("Ride does not exist");
-
-        final snapshotData = rideSnapshot.data() as Map<String, dynamic>;
-        final currentSeats = snapshotData['seatsAvailable'] as int;
-
-        int seatsChange = selectedSeats;
-        if (isUpdate) {
-          seatsChange = selectedSeats - effectiveBookedSeats!;
-        }
-
-        if (seatsChange > 0 && currentSeats < seatsChange) {
-          throw Exception("Not enough seats available");
-        }
-
-        // Update ride doc
-        // Update bookedUsers array: remove old entry if update, add new entry
-        List<dynamic> bookedUsers =
-            List.from(snapshotData['bookedUsers'] ?? []);
-
-        if (isUpdate) {
-          // Remove existing user entry
-          bookedUsers.removeWhere((element) => element['uid'] == uid);
-        }
-
-        // Add new entry
-        bookedUsers.add({
-          'uid': uid,
-          'name': userName,
-          'profilePic': userPic,
-          'seats': selectedSeats,
-          'bookedAt': DateTime.now().toString()
-        });
-
-        transaction.update(widget.rideReference, {
-          'seatsAvailable': currentSeats - seatsChange,
-          'seatsBooked': FieldValue.increment(seatsChange),
-          'bookedUsers': bookedUsers
-        });
-
-        // Add to my booked trips
-        DocumentReference myBookingRef;
-        if (isUpdate) {
-          myBookingRef = FirebaseFirestore.instance
-              .collection('users')
-              .doc(uid)
-              .collection('bookedTrips')
-              .doc(effectiveBookingId);
-
-          transaction.update(myBookingRef, {
-            'seatsBooked': selectedSeats,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-        } else {
-          myBookingRef = FirebaseFirestore.instance
-              .collection('users')
-              .doc(uid)
-              .collection('bookedTrips')
-              .doc();
-
-          final bookingData = Map<String, dynamic>.from(widget.rideData);
-          bookingData['seatsBooked'] = selectedSeats; // My booked seats
-          bookingData['status'] = 'Upcoming';
-          bookingData['bookedAt'] = FieldValue.serverTimestamp();
-          bookingData['driverId'] = widget.rideReference.parent.parent!.id;
-          bookingData['rideId'] = widget.rideReference.id;
-
-          transaction.set(myBookingRef, bookingData);
-        }
-      });
+      await _rideRepo.bookRide(
+        rideId: widget.rideId,
+        driverId: widget.driverId,
+        userId: uid,
+        userName: userName,
+        userPic: userPic,
+        seats: selectedSeats,
+        rideData: widget.rideData,
+        existingBookingId: effectiveBookingId,
+        existingBookedSeats: effectiveBookedSeats,
+      );
 
       if (!isUpdate) {
-        await FirebaseFirestore.instance.collection('users').doc(uid).update({
-          'ridesTaken': FieldValue.increment(1),
-        });
+        await _userRepo.incrementUserStat(uid, 'ridesTaken', 1);
       }
 
       if (!mounted) return;
@@ -291,41 +219,20 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
 
     setState(() => isBooking = true);
     try {
-      final user = FirebaseAuth.instance.currentUser;
+      final user = _userRepo.currentUser;
       if (user == null) return;
       final uid = user.uid;
-      final userBookingRef = FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .collection('bookedTrips')
-          .doc(effectiveBookingId);
 
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        final rideSnapshot = await transaction.get(widget.rideReference);
-        if (!rideSnapshot.exists)
-          throw Exception("Ride does not exist anymore.");
+      await _rideRepo.cancelBooking(
+        rideId: widget.rideId,
+        driverId: widget.driverId,
+        userId: uid,
+        bookingId: effectiveBookingId,
+        seatsBooked: effectiveBookedSeats!,
+      );
 
-        final snapshotData = rideSnapshot.data() as Map<String, dynamic>;
-        List<dynamic> bookedUsers =
-            List.from(snapshotData['bookedUsers'] ?? []);
-
-        final userBookingData =
-            bookedUsers.firstWhere((b) => b['uid'] == uid, orElse: () => null);
-
-        if (userBookingData != null) {
-          transaction.update(widget.rideReference, {
-            'seatsAvailable': FieldValue.increment(effectiveBookedSeats!),
-            'seatsBooked': FieldValue.increment(-effectiveBookedSeats),
-            'bookedUsers': FieldValue.arrayRemove([userBookingData])
-          });
-        }
-        transaction.delete(userBookingRef);
-      });
-
-      await FirebaseFirestore.instance.collection('users').doc(uid).update({
-        'ridesTaken': FieldValue.increment(-1),
-        'ridesCancelled': FieldValue.increment(1),
-      });
+      await _userRepo.incrementUserStat(uid, 'ridesTaken', -1);
+      await _userRepo.incrementUserStat(uid, 'ridesCancelled', 1);
 
       if (!mounted) return;
 
@@ -371,15 +278,14 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: widget.rideReference.snapshots(),
+    return StreamBuilder<Map<String, dynamic>?>(
+      stream: _rideRepo.getRideStream(widget.driverId, widget.rideId),
       builder: (context, snapshot) {
-        final data =
-            snapshot.hasData && snapshot.data != null && snapshot.data!.exists
-                ? snapshot.data!.data() as Map<String, dynamic>
-                : widget.rideData;
+        final data = snapshot.hasData && snapshot.data != null
+            ? snapshot.data!
+            : widget.rideData;
 
-        final uid = FirebaseAuth.instance.currentUser?.uid;
+        final uid = _userRepo.currentUser?.uid;
         final bookedUsers = (data['bookedUsers'] as List<dynamic>?)
                 ?.map((e) => e as Map<String, dynamic>)
                 .toList() ??

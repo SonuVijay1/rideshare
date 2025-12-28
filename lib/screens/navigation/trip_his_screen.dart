@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:rideshareApp/screens/offer/offer_ride_screen.dart';
 import 'package:rideshareApp/screens/book/ride_details_screen.dart';
+import '../../repositories/ride_repository.dart';
+import '../../repositories/user_repository.dart';
 
 class TripHistoryScreen extends StatelessWidget {
-  const TripHistoryScreen({super.key});
+  TripHistoryScreen({super.key});
+
+  final RideRepository _rideRepo = FirebaseRideRepository();
+  final UserRepository _userRepo = FirebaseUserRepository();
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = _userRepo.currentUser;
 
     if (user == null) {
       return const Scaffold(
@@ -21,27 +24,26 @@ class TripHistoryScreen extends StatelessWidget {
         ),
       );
     }
-    print('AUTH UID: ${user.uid}');
-    print('AUTH PHONE: ${user.phoneNumber}');
     final uid = user.uid;
-    final userDocRef = FirebaseFirestore.instance.collection("users").doc(uid);
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: userDocRef.collection("driverTrips").limit(1).snapshots(),
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _rideRepo.getDriverTrips(uid),
       builder: (context, driverSnap) {
-        return StreamBuilder<QuerySnapshot>(
-          stream: userDocRef.collection("bookedTrips").limit(1).snapshots(),
+        return StreamBuilder<List<Map<String, dynamic>>>(
+          stream: _rideRepo.getBookedTrips(uid),
           builder: (context, bookedSnap) {
             if (driverSnap.connectionState == ConnectionState.waiting ||
                 bookedSnap.connectionState == ConnectionState.waiting) {
               return const Scaffold(
                 backgroundColor: Color(0xFF121212),
-                body: Center(child: CircularProgressIndicator(color: Colors.white)),
+                body: Center(
+                    child: CircularProgressIndicator(color: Colors.white)),
               );
             }
 
-            final hasOffered = driverSnap.hasData && driverSnap.data!.docs.isNotEmpty;
-            final hasBooked = bookedSnap.hasData && bookedSnap.data!.docs.isNotEmpty;
+            final hasOffered =
+                driverSnap.hasData && driverSnap.data!.isNotEmpty;
+            final hasBooked = bookedSnap.hasData && bookedSnap.data!.isNotEmpty;
 
             if (hasOffered && hasBooked) {
               return DefaultTabController(
@@ -53,7 +55,8 @@ class TripHistoryScreen extends StatelessWidget {
                     elevation: 0,
                     title: const Text(
                       "My Trips",
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.bold),
                     ),
                     bottom: const TabBar(
                       indicatorColor: Colors.white,
@@ -66,7 +69,7 @@ class TripHistoryScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  body: const TabBarView(
+                  body: TabBarView(
                     children: [
                       _TripsList(isOffered: true),
                       _TripsList(isOffered: false),
@@ -83,10 +86,11 @@ class TripHistoryScreen extends StatelessWidget {
                   centerTitle: true,
                   title: const Text(
                     "Offered",
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                 ),
-                body: const _TripsList(isOffered: true),
+                body: _TripsList(isOffered: true),
               );
             } else if (hasBooked) {
               return Scaffold(
@@ -97,10 +101,11 @@ class TripHistoryScreen extends StatelessWidget {
                   centerTitle: true,
                   title: const Text(
                     "Booked",
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                 ),
-                body: const _TripsList(isOffered: false),
+                body: _TripsList(isOffered: false),
               );
             } else {
               return Scaffold(
@@ -110,7 +115,8 @@ class TripHistoryScreen extends StatelessWidget {
                   elevation: 0,
                   title: const Text(
                     "My Trips",
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                 ),
                 body: const Center(
@@ -130,31 +136,29 @@ class TripHistoryScreen extends StatelessWidget {
 
 class _TripsList extends StatelessWidget {
   final bool isOffered;
+  final RideRepository _rideRepo = FirebaseRideRepository();
+  final UserRepository _userRepo = FirebaseUserRepository();
 
-  const _TripsList({required this.isOffered});
+  _TripsList({required this.isOffered});
 
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = _userRepo.currentUser?.uid;
     if (uid == null) return const SizedBox.shrink();
 
-    // Assuming 'driverTrips' for offered rides and 'bookedTrips' for booked rides
-    final collectionName = isOffered ? "driverTrips" : "bookedTrips";
+    final stream = isOffered
+        ? _rideRepo.getDriverTrips(uid)
+        : _rideRepo.getBookedTrips(uid);
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection("users")
-          .doc(uid)
-          .collection(collectionName)
-          .orderBy("date", descending: true)
-          .snapshots(),
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: stream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
               child: CircularProgressIndicator(color: Colors.white));
         }
 
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -176,15 +180,16 @@ class _TripsList extends StatelessWidget {
           );
         }
 
-        final docs = snapshot.data!.docs;
+        final docs = snapshot.data!;
 
         return ListView.separated(
           padding: const EdgeInsets.all(20),
           itemCount: docs.length,
           separatorBuilder: (context, index) => const SizedBox(height: 16),
           itemBuilder: (context, index) {
-            final data = docs[index].data() as Map<String, dynamic>;
-            final id = docs[index].id;
+            final data = docs[index];
+            final id =
+                isOffered ? (data['rideId'] ?? '') : (data['bookingId'] ?? '');
             return _TripCard(data: data, rideId: id, isOffered: isOffered);
           },
         );
@@ -198,7 +203,8 @@ class _TripCard extends StatelessWidget {
   final String rideId;
   final bool isOffered;
 
-  const _TripCard({required this.data, required this.rideId, required this.isOffered});
+  const _TripCard(
+      {required this.data, required this.rideId, required this.isOffered});
 
   String _formatDate(String? dateStr) {
     if (dateStr == null || dateStr.isEmpty) return "Unknown Date";
@@ -214,8 +220,7 @@ class _TripCard extends StatelessWidget {
     if (durationStr == null) return const Duration(hours: 2); // Default
     int hours = 0;
     int mins = 0;
-    final hMatch =
-        RegExp(r'(\d+)\s*(h|hr|hour|hours)').firstMatch(durationStr);
+    final hMatch = RegExp(r'(\d+)\s*(h|hr|hour|hours)').firstMatch(durationStr);
     final mMatch =
         RegExp(r'(\d+)\s*(m|min|mins|minute|minutes)').firstMatch(durationStr);
     if (hMatch != null) hours = int.parse(hMatch.group(1)!);
@@ -260,7 +265,7 @@ class _TripCard extends StatelessWidget {
       }
 
       final now = DateTime.now();
-      
+
       final duration = _parseDuration(durationStr);
 
       final endDateTime = dateTime.add(duration);
@@ -296,10 +301,11 @@ class _TripCard extends StatelessWidget {
       final timeStr = data['time'] as String?;
       final durationStr = data['duration'] as String?;
       if (dateStr != null && timeStr != null) {
-        // Re-using logic implicitly or we could refactor. 
+        // Re-using logic implicitly or we could refactor.
         // For UI simplicity, let's just parse time + duration
         final cleanTimeStr = timeStr.replaceAll('\u202F', ' ');
-        final startTime = DateFormat("h:mm a").parse(cleanTimeStr); // simplistic
+        final startTime =
+            DateFormat("h:mm a").parse(cleanTimeStr); // simplistic
         final duration = _parseDuration(durationStr);
         final endTime = startTime.add(duration);
         endTimeStr = DateFormat("h:mm a").format(endTime);
@@ -311,7 +317,8 @@ class _TripCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF1E1E1E),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: isCompleted ? Colors.white10 : Colors.white24),
+        border:
+            Border.all(color: isCompleted ? Colors.white10 : Colors.white24),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -377,16 +384,21 @@ class _TripCard extends StatelessWidget {
                           final driverId = data['driverId'];
                           final rId = data['rideId'];
                           if (driverId != null && rId != null) {
-                            final ref = FirebaseFirestore.instance.collection('users').doc(driverId).collection('driverTrips').doc(rId);
-                            Navigator.push(context, MaterialPageRoute(builder: (_) => RideDetailsScreen(
-                              rideData: data, 
-                              rideReference: ref,
-                              bookingId: rideId,
-                              existingBookedSeats: data['seatsBooked'] ?? 0,
-                            )));
+                            Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) => RideDetailsScreen(
+                                          rideData: data,
+                                          rideId: rId,
+                                          driverId: driverId,
+                                          bookingId: rideId,
+                                          existingBookedSeats:
+                                              data['seatsBooked'] ?? 0,
+                                        )));
                           }
                         },
-                        child: const Icon(Icons.edit, color: Colors.white70, size: 18),
+                        child: const Icon(Icons.edit,
+                            color: Colors.white70, size: 18),
                       ),
                     ),
                 ],
@@ -395,7 +407,8 @@ class _TripCard extends StatelessWidget {
           ),
           const Divider(color: Colors.white10, height: 24),
 
-          if (statusText == "Cancelled" && data['cancellationReason'] != null) ...[
+          if (statusText == "Cancelled" &&
+              data['cancellationReason'] != null) ...[
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(10),
@@ -408,22 +421,23 @@ class _TripCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("Cancellation Reason:", style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                  const Text("Cancellation Reason:",
+                      style: TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
-                  Text(data['cancellationReason'], style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                  Text(data['cancellationReason'],
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 13)),
                 ],
               ),
             ),
           ],
-          
+
           // Route
-          _locationRow(
-            Icons.circle, 
-            isCompleted ? Colors.grey : Colors.green, 
-            data['from'] ?? 'Origin',
-            data['time'] ?? '',
-            isCompleted
-          ),
+          _locationRow(Icons.circle, isCompleted ? Colors.grey : Colors.green,
+              data['from'] ?? 'Origin', data['time'] ?? '', isCompleted),
           Container(
             margin: const EdgeInsets.only(left: 11),
             height: 20,
@@ -431,23 +445,26 @@ class _TripCard extends StatelessWidget {
             color: Colors.white12,
           ),
           _locationRow(
-            Icons.location_on, 
-            isCompleted ? Colors.grey : Colors.redAccent, 
-            data['to'] ?? 'Destination',
-            endTimeStr,
-            isCompleted
-          ),
+              Icons.location_on,
+              isCompleted ? Colors.grey : Colors.redAccent,
+              data['to'] ?? 'Destination',
+              endTimeStr,
+              isCompleted),
 
           const SizedBox(height: 20),
-          
+
           // Stats Row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _infoItem(Icons.directions_car, "${(data['distanceKm'] as num?)?.round() ?? 0} km", isCompleted),
+              _infoItem(
+                  Icons.directions_car,
+                  "${(data['distanceKm'] as num?)?.round() ?? 0} km",
+                  isCompleted),
               _infoItem(Icons.timer, data['duration'] ?? '', isCompleted),
               if (isOffered)
-                _infoItem(Icons.airline_seat_recline_normal, "${data['seatsAvailable'] ?? 0} Seats", isCompleted)
+                _infoItem(Icons.airline_seat_recline_normal,
+                    "${data['seatsAvailable'] ?? 0} Seats", isCompleted)
               else
                 _LiveSeatsInfo(
                   driverId: data['driverId'],
@@ -459,7 +476,9 @@ class _TripCard extends StatelessWidget {
           ),
 
           // Booked Users Section
-          if (isOffered && data['bookedUsers'] != null && (data['bookedUsers'] as List).isNotEmpty) ...[
+          if (isOffered &&
+              data['bookedUsers'] != null &&
+              (data['bookedUsers'] as List).isNotEmpty) ...[
             const Divider(color: Colors.white10, height: 24),
             const Text(
               "Booked by:",
@@ -500,17 +519,21 @@ class _TripCard extends StatelessWidget {
   Widget _infoItem(IconData icon, String text, bool isCompleted) {
     return Row(
       children: [
-        Icon(icon, color: isCompleted ? Colors.white24 : Colors.white54, size: 16),
+        Icon(icon,
+            color: isCompleted ? Colors.white24 : Colors.white54, size: 16),
         const SizedBox(width: 6),
         Text(
           text,
-          style: TextStyle(color: isCompleted ? Colors.white38 : Colors.white70, fontSize: 13),
+          style: TextStyle(
+              color: isCompleted ? Colors.white38 : Colors.white70,
+              fontSize: 13),
         ),
       ],
     );
   }
 
-  Widget _locationRow(IconData icon, Color color, String text, String time, bool isCompleted) {
+  Widget _locationRow(
+      IconData icon, Color color, String text, String time, bool isCompleted) {
     return Row(
       children: [
         Icon(icon, color: color, size: 24),
@@ -524,17 +547,16 @@ class _TripCard extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    color: isCompleted ? Colors.white60 : Colors.white, 
-                    fontSize: 16, 
+                    color: isCompleted ? Colors.white60 : Colors.white,
+                    fontSize: 16,
                     fontWeight: FontWeight.w500),
               ),
               if (time.isNotEmpty)
                 Text(
                   time,
                   style: TextStyle(
-                    color: isCompleted ? Colors.white24 : Colors.white54, 
-                    fontSize: 12
-                  ),
+                      color: isCompleted ? Colors.white24 : Colors.white54,
+                      fontSize: 12),
                 ),
             ],
           ),
@@ -549,8 +571,9 @@ class _LiveSeatsInfo extends StatelessWidget {
   final String? rideId;
   final int initialSeats;
   final bool isCompleted;
+  final RideRepository _rideRepo = FirebaseRideRepository();
 
-  const _LiveSeatsInfo({
+  _LiveSeatsInfo({
     super.key,
     required this.driverId,
     required this.rideId,
@@ -564,17 +587,12 @@ class _LiveSeatsInfo extends StatelessWidget {
       return _buildRow(initialSeats);
     }
 
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('users')
-          .doc(driverId)
-          .collection('driverTrips')
-          .doc(rideId)
-          .snapshots(),
+    return StreamBuilder<Map<String, dynamic>?>(
+      stream: _rideRepo.getRideStream(driverId!, rideId!),
       builder: (context, snapshot) {
         int seats = initialSeats;
-        if (snapshot.hasData && snapshot.data != null && snapshot.data!.exists) {
-          final data = snapshot.data!.data() as Map<String, dynamic>;
+        if (snapshot.hasData && snapshot.data != null) {
+          final data = snapshot.data!;
           seats = data['seatsAvailable'] ?? 0;
         }
         return _buildRow(seats);
@@ -585,11 +603,14 @@ class _LiveSeatsInfo extends StatelessWidget {
   Widget _buildRow(int seats) {
     return Row(
       children: [
-        Icon(Icons.airline_seat_recline_normal, color: isCompleted ? Colors.white24 : Colors.white54, size: 16),
+        Icon(Icons.airline_seat_recline_normal,
+            color: isCompleted ? Colors.white24 : Colors.white54, size: 16),
         const SizedBox(width: 6),
         Text(
           "$seats Seats",
-          style: TextStyle(color: isCompleted ? Colors.white38 : Colors.white70, fontSize: 13),
+          style: TextStyle(
+              color: isCompleted ? Colors.white38 : Colors.white70,
+              fontSize: 13),
         ),
       ],
     );
@@ -598,18 +619,19 @@ class _LiveSeatsInfo extends StatelessWidget {
 
 class _DriverInfo extends StatelessWidget {
   final String driverId;
-  const _DriverInfo({required this.driverId});
+  final UserRepository _userRepo = FirebaseUserRepository();
+  _DriverInfo({required this.driverId});
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<DocumentSnapshot>(
-      future: FirebaseFirestore.instance.collection('users').doc(driverId).get(),
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: _userRepo.getUser(driverId),
       builder: (context, snapshot) {
-        if (!snapshot.hasData || !snapshot.data!.exists) {
+        if (!snapshot.hasData || snapshot.data == null) {
           return const SizedBox.shrink(); // Or a loading/error state
         }
-        
-        final driverData = snapshot.data!.data() as Map<String, dynamic>;
+
+        final driverData = snapshot.data!;
         final driverName = driverData['name'] ?? 'Driver';
 
         return Column(
