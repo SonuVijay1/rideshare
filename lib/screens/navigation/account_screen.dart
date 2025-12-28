@@ -750,42 +750,105 @@ class _AccountScreenState extends State<AccountScreen>
 
   Widget _statsCard(int taken, int offered, int cancelled, double pRate,
       double dRate, String cancelStatus) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: [
+                    const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.person, color: Colors.blueAccent, size: 16),
+                        SizedBox(width: 8),
+                        Text("Passenger",
+                            style: TextStyle(
+                                color: Colors.blueAccent,
+                                fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _statItem("Rides Taken", "$taken"),
+                    const SizedBox(height: 12),
+                    _statItem("Rating", pRate.toStringAsFixed(1),
+                        icon: Icons.star, iconColor: Colors.amber),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: [
+                    const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.directions_car,
+                            color: Colors.greenAccent, size: 16),
+                        SizedBox(width: 8),
+                        Text("Driver",
+                            style: TextStyle(
+                                color: Colors.greenAccent,
+                                fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _statItem("Rides Offered", "$offered"),
+                    const SizedBox(height: 12),
+                    _statItem("Rating", dRate.toStringAsFixed(1),
+                        icon: Icons.star, iconColor: Colors.amber),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
             children: [
-              _statItem("Rides Taken", "$taken"),
-              _statItem("Rides Offered", "$offered"),
+              const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.shield, color: Colors.orangeAccent, size: 16),
+                  SizedBox(width: 8),
+                  Text("Reliability",
+                      style: TextStyle(
+                          color: Colors.orangeAccent,
+                          fontWeight: FontWeight.bold)),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _statItem("Cancelled", "$cancelled"),
+                  _statItem("Frequency", cancelStatus,
+                      icon: Icons.info_outline, iconColor: Colors.white70),
+                ],
+              ),
             ],
           ),
-          const Divider(color: Colors.white10, height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _statItem("Cancelled", "$cancelled"),
-              _statItem("Cancel Freq", cancelStatus,
-                  icon: Icons.info_outline, iconColor: Colors.white70),
-            ],
-          ),
-          const Divider(color: Colors.white10, height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _statItem("Psngr Rating", pRate.toStringAsFixed(1),
-                  icon: Icons.star, iconColor: Colors.amber),
-              _statItem("Driver Rating", dRate.toStringAsFixed(1),
-                  icon: Icons.star, iconColor: Colors.amber),
-            ],
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
