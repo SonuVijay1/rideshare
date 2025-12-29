@@ -7,6 +7,7 @@ import 'dart:async';
 import '../../repositories/user_repository.dart';
 import '../../repositories/storage_repository.dart';
 import '../profile/profile_screen.dart';
+import '../profile/vehicle_profile_screen.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -422,21 +423,12 @@ class _AccountScreenState extends State<AccountScreen>
 
                               const SizedBox(height: 20),
                               section("Vehicle Details"),
-                              _tile("Type", data['vehicleType'] ?? "Not Added",
-                                  onTap: () =>
-                                      _openEditVehicleSheet(context, safeData)),
-                              _tile(
-                                  "Model", data['vehicleModel'] ?? "Not Added",
-                                  onTap: () =>
-                                      _openEditVehicleSheet(context, safeData)),
-                              _tile(
-                                  "Color", data['vehicleColor'] ?? "Not Added",
-                                  onTap: () =>
-                                      _openEditVehicleSheet(context, safeData)),
-                              _tile("Number",
-                                  data['vehicleNumber'] ?? "Not Added",
-                                  onTap: () =>
-                                      _openEditVehicleSheet(context, safeData)),
+                              _tile("Vehicle Profile", "View & Edit",
+                                  onTap: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                          builder: (_) =>
+                                              const VehicleProfileScreen()))),
 
                               const SizedBox(height: 20),
 
@@ -451,21 +443,20 @@ class _AccountScreenState extends State<AccountScreen>
 
                               section("Emergency Contact"),
                               _emergencyTile(safeData),
-
-                              const SizedBox(height: 25),
-
-                              _logoutButton(() async {
-                                await _userRepo.signOut();
-                                if (context.mounted) {
-                                  Navigator.pushNamedAndRemoveUntil(
-                                      context, "/login", (route) => false);
-                                }
-                              }),
-                              const SizedBox(height: 25),
                             ],
                           )),
                     ),
-                  )
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: _logoutButton(() async {
+                      await _userRepo.signOut();
+                      if (context.mounted) {
+                        Navigator.pushNamedAndRemoveUntil(
+                            context, "/login", (route) => false);
+                      }
+                    }),
+                  ),
                 ],
               );
             }),
@@ -748,83 +739,4 @@ class _AccountScreenState extends State<AccountScreen>
                       color: Colors.redAccent, fontWeight: FontWeight.bold)),
             )),
       );
-
-  void _openEditVehicleSheet(BuildContext context, Map<String, dynamic> d) {
-    if (uid == null) return;
-    final vm = TextEditingController(text: d['vehicleModel'] ?? "");
-    final vn = TextEditingController(text: d['vehicleNumber'] ?? "");
-    final vc = TextEditingController(text: d['vehicleColor'] ?? "");
-    String vehicleType = d['vehicleType'] ?? "Car";
-
-    showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: const Color(0xFF1E1E1E),
-        shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
-        builder: (context) {
-          return StatefulBuilder(builder: (context, setState) {
-            return Padding(
-                padding: EdgeInsets.only(
-                    bottom: MediaQuery.of(context).viewInsets.bottom,
-                    left: 20,
-                    right: 20,
-                    top: 20),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Text("Edit Vehicle Details",
-                      style: TextStyle(color: Colors.white, fontSize: 18)),
-                  const SizedBox(height: 20),
-                  DropdownButtonFormField<String>(
-                      value: vehicleType,
-                      dropdownColor: Colors.black,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: _dec("Vehicle Type"),
-                      items: const [
-                        DropdownMenuItem(
-                            value: "Car", child: Text("Car (4 seats)")),
-                        DropdownMenuItem(
-                            value: "Bike", child: Text("Bike (1 seat)")),
-                        DropdownMenuItem(
-                            value: "SUV", child: Text("SUV (6 seats)")),
-                        DropdownMenuItem(
-                            value: "Bus", child: Text("Bus (20+ seats)")),
-                        DropdownMenuItem(value: "Other", child: Text("Other")),
-                      ],
-                      onChanged: (v) => setState(() => vehicleType = v!)),
-                  const SizedBox(height: 10),
-                  _input("Vehicle Model", vm),
-                  const SizedBox(height: 10),
-                  _input("Vehicle Color", vc),
-                  const SizedBox(height: 10),
-                  _input("Vehicle Number", vn),
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.black),
-                      onPressed: () async {
-                        await _userRepo.updateUserData(uid!, {
-                          "vehicleModel": vm.text.trim(),
-                          "vehicleNumber": vn.text.trim(),
-                          "vehicleColor": vc.text.trim(),
-                          "vehicleType": vehicleType,
-                        });
-
-                        if (context.mounted) Navigator.pop(context);
-                      },
-                      child: const Padding(
-                        padding: EdgeInsets.all(10),
-                        child: Text("Save"),
-                      ))
-                ]));
-          });
-        });
-  }
-
-  InputDecoration _dec(String t) => InputDecoration(
-      labelText: t,
-      labelStyle: const TextStyle(color: Colors.white54),
-      filled: true,
-      fillColor: Colors.black,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)));
 }

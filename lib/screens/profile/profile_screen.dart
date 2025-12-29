@@ -267,6 +267,18 @@ class _ProfileScreenState extends State<ProfileScreen>
     final dobC = TextEditingController(text: d['dob'] ?? "");
     String gender = d['gender'] ?? "Male";
 
+    // Capture initial values for dirty check
+    final iName = d['name'] ?? "";
+    final iCity = d['city'] ?? "";
+    final iAge = d['age']?.toString() ?? "";
+    final iDob = d['dob'] ?? "";
+    final iGender = d['gender'] ?? "Male";
+
+    // Validation state
+    String? nameError;
+    String? ageError;
+    String? cityError;
+
     showModalBottomSheet(
         context: context,
         isScrollControlled: true,
@@ -274,8 +286,48 @@ class _ProfileScreenState extends State<ProfileScreen>
         shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
         builder: (context) {
+          bool forcePop = false;
           return StatefulBuilder(builder: (context, setState) {
-            return Padding(
+            final isModified = n.text.trim() != iName ||
+                c.text.trim() != iCity ||
+                a.text.trim() != iAge ||
+                dobC.text.trim() != iDob ||
+                gender != iGender;
+
+            return PopScope(
+              canPop: !isModified || forcePop,
+              onPopInvoked: (didPop) async {
+                if (didPop) return;
+                final shouldPop = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    backgroundColor: const Color(0xFF1E1E1E),
+                    title: const Text("Discard Changes?",
+                        style: TextStyle(color: Colors.white)),
+                    content: const Text(
+                        "You have unsaved changes. Are you sure you want to discard them?",
+                        style: TextStyle(color: Colors.white70)),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text("Cancel"),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text("Discard",
+                            style: TextStyle(color: Colors.redAccent)),
+                      ),
+                    ],
+                  ),
+                );
+                if (shouldPop == true) {
+                  setState(() => forcePop = true);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (context.mounted) Navigator.of(context).pop();
+                  });
+                }
+              },
+              child: Padding(
                 padding: EdgeInsets.only(
                     bottom: MediaQuery.of(context).viewInsets.bottom,
                     left: 20,
@@ -285,7 +337,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   const Text("Edit Personal Details",
                       style: TextStyle(color: Colors.white, fontSize: 18)),
                   const SizedBox(height: 20),
-                  _input("Name", n),
+                  _input("Name", n, onChanged: (_) => setState(() { nameError = null; }), errorText: nameError),
                   const SizedBox(height: 10),
                   GestureDetector(
                     onTap: () async {
@@ -306,6 +358,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       );
                       if (picked != null) {
                         dobC.text = DateFormat("yyyy-MM-dd").format(picked);
+                        setState(() {});
                       }
                     },
                     child: AbsorbPointer(child: _input("Date of Birth", dobC)),
@@ -332,45 +385,78 @@ class _ProfileScreenState extends State<ProfileScreen>
                       ],
                       onChanged: (v) => setState(() => gender = v!)),
                   const SizedBox(height: 10),
-                  _input("Age", a),
+                  _input("Age", a, onChanged: (_) => setState(() { ageError = null; }), errorText: ageError),
                   const SizedBox(height: 10),
-                  _input("City", c),
+                  _input("City", c, onChanged: (_) => setState(() { cityError = null; }), errorText: cityError),
                   const SizedBox(height: 20),
                   ElevatedButton(
                       style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.white,
-                          foregroundColor: Colors.black),
-                      onPressed: () async {
+                          foregroundColor: Colors.black,
+                          disabledBackgroundColor: Colors.white24,
+                          disabledForegroundColor: Colors.white38),
+                      onPressed: isModified ? () async {
+                        // Validation
+                        bool isValid = true;
+                        setState(() {
+                          nameError = null;
+                          ageError = null;
+                          cityError = null;
+                        });
+
+                        if (n.text.trim().isEmpty) {
+                          nameError = "Name is required";
+                          isValid = false;
+                        }
+
+                        final ageVal = int.tryParse(a.text.trim());
+                        if (ageVal == null || ageVal < 18 || ageVal > 100) {
+                          ageError = "Valid age (18-100) required";
+                          isValid = false;
+                        }
+
+                        if (c.text.trim().isEmpty) {
+                          cityError = "City is required";
+                          isValid = false;
+                        }
+
+                        setState(() {}); // Update UI with errors
+                        if (!isValid) return;
+
                         await _userRepo.updateUserData(uid!, {
                           "name": n.text.trim(),
                           "gender": gender,
                           "city": c.text.trim(),
-                          "age": int.tryParse(a.text.trim()),
+                          "age": ageVal,
                           "dob": dobC.text.trim(),
                         });
                         if (context.mounted) Navigator.pop(context);
-                      },
+                      } : null,
                       child: const Padding(
                         padding: EdgeInsets.all(10),
                         child: Text("Save"),
                       )),
                   const SizedBox(height: 20),
-                ]));
+                ])));
           });
         });
   }
 
-  Widget _input(String t, TextEditingController c) => TextField(
+  Widget _input(String t, TextEditingController c,
+          {ValueChanged<String>? onChanged, String? errorText}) =>
+      TextField(
         controller: c,
+        onChanged: onChanged,
         style: const TextStyle(color: Colors.white),
-        decoration: _dec(t),
+        decoration: _dec(t, errorText: errorText),
       );
 
-  InputDecoration _dec(String t) => InputDecoration(
+  InputDecoration _dec(String t, {String? errorText}) => InputDecoration(
       labelText: t,
       labelStyle: const TextStyle(color: Colors.white54),
       filled: true,
       fillColor: Colors.black,
+      errorText: errorText,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)));
 
   /* ---------------- UI ---------------- */
@@ -409,62 +495,71 @@ class _ProfileScreenState extends State<ProfileScreen>
           final dob = data['dob'] ?? "Not Added";
           final pic = data['profilePic'];
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              children: [
-                // Avatar
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                        color: Colors.blueAccent.withOpacity(0.8), width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.blueAccent.withOpacity(0.4),
-                        blurRadius: 12,
-                        spreadRadius: 2,
+          return Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      // Avatar
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                              color: Colors.blueAccent.withOpacity(0.8),
+                              width: 2),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.blueAccent.withOpacity(0.4),
+                              blurRadius: 12,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                        child: CircleAvatar(
+                          radius: 50,
+                          backgroundColor: Colors.deepPurple,
+                          backgroundImage:
+                              pic != null ? NetworkImage(pic) : null,
+                          child: pic == null
+                              ? Text(
+                                  name.isNotEmpty ? name[0].toUpperCase() : "?",
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 40),
+                                )
+                              : null,
+                        ),
                       ),
+                      const SizedBox(height: 20),
+                      Text(
+                        name,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 30),
+
+                      // Details
+                      _sectionHeader("Personal Details"),
+                      _tile("Name", name),
+                      _tile("Date of Birth", dob),
+                      _tile("Gender", gender),
+                      _tile("Age", age),
+                      _tile("City", city),
+
+                      const SizedBox(height: 20),
+                      _sectionHeader("Contact Info"),
+                      _mobileTile(phone),
+                      _emailTile(email),
                     ],
                   ),
-                  child: CircleAvatar(
-                    radius: 50,
-                    backgroundColor: Colors.deepPurple,
-                    backgroundImage: pic != null ? NetworkImage(pic) : null,
-                    child: pic == null
-                        ? Text(
-                            name.isNotEmpty ? name[0].toUpperCase() : "?",
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 40),
-                          )
-                        : null,
-                  ),
                 ),
-                const SizedBox(height: 20),
-                Text(
-                  name,
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 30),
-
-                // Details
-                _sectionHeader("Personal Details"),
-                _tile("Name", name),
-                _tile("Date of Birth", dob),
-                _tile("Gender", gender),
-                _tile("Age", age),
-                _tile("City", city),
-
-                const SizedBox(height: 20),
-                _sectionHeader("Contact Info"),
-                _mobileTile(phone),
-                _emailTile(email),
-
-                const SizedBox(height: 30),
-                SizedBox(
+              ),
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: SizedBox(
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton(
@@ -480,8 +575,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                             fontSize: 16, fontWeight: FontWeight.bold)),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           );
         },
       ),
