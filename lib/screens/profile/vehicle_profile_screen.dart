@@ -18,181 +18,222 @@ class _VehicleProfileScreenState extends State<VehicleProfileScreen> {
     uid = _userRepo.currentUser?.uid;
   }
 
-  void _openEditVehicleSheet(BuildContext context, Map<String, dynamic> d) {
-  if (uid == null) return;
-  final vm = TextEditingController(text: d['vehicleModel'] ?? "");
-  final vn = TextEditingController(text: d['vehicleNumber'] ?? "");
-  final vc = TextEditingController(text: d['vehicleColor'] ?? "");
-  String vehicleType = d['vehicleType'] ?? "Car";
+  void _openVehicleSheet(BuildContext context, [Map<String, dynamic>? d]) {
+    if (uid == null) return;
+    final isEditing = d != null;
+    final vm = TextEditingController(text: d?['vehicleModel'] ?? "");
+    final vn = TextEditingController(text: d?['vehicleNumber'] ?? "");
+    final vc = TextEditingController(text: d?['vehicleColor'] ?? "");
+    String vehicleType = d?['vehicleType'] ?? "Car";
 
-  final iVm = d['vehicleModel'] ?? "";
-  final iVn = d['vehicleNumber'] ?? "";
-  final iVc = d['vehicleColor'] ?? "";
-  final iType = d['vehicleType'] ?? "Car";
+    final iVm = d?['vehicleModel'] ?? "";
+    final iVn = d?['vehicleNumber'] ?? "";
+    final iVc = d?['vehicleColor'] ?? "";
+    final iType = d?['vehicleType'] ?? "Car";
 
-  String? vmError;
-  String? vnError;
-  String? vcError;
+    String? vmError;
+    String? vnError;
+    String? vcError;
 
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: const Color(0xFF1E1E1E),
-    shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
-    builder: (context) {
-      bool forcePop = false;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+      builder: (context) {
+        bool forcePop = false;
 
-      return StatefulBuilder(
-        builder: (context, setState) {
-          final isModified = vm.text.trim() != iVm ||
-              vn.text.trim() != iVn ||
-              vc.text.trim() != iVc ||
-              vehicleType != iType;
+        return StatefulBuilder(
+          builder: (context, setState) {
+            final isModified = vm.text.trim() != iVm ||
+                vn.text.trim() != iVn ||
+                vc.text.trim() != iVc ||
+                vehicleType != iType;
 
-          return PopScope(
-            canPop: !isModified || forcePop,
-            onPopInvoked: (didPop) async {
-              if (didPop) return;
+            return PopScope(
+              canPop: !isModified || forcePop,
+              onPopInvoked: (didPop) async {
+                if (didPop) return;
 
-              final shouldPop = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  backgroundColor: const Color(0xFF1E1E1E),
-                  title: const Text("Discard Changes?",
-                      style: TextStyle(color: Colors.white)),
-                  content: const Text(
-                      "You have unsaved changes. Are you sure you want to discard them?",
-                      style: TextStyle(color: Colors.white70)),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text("Cancel")),
-                    TextButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text("Discard",
-                            style: TextStyle(color: Colors.redAccent))),
-                  ],
-                ),
-              );
-
-              if (shouldPop == true) {
-                setState(() => forcePop = true);
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (context.mounted) Navigator.of(context).pop();
-                });
-              }
-            },
-            child: Padding(
-              padding: EdgeInsets.only(
-                  bottom: MediaQuery.of(context).viewInsets.bottom,
-                  left: 20,
-                  right: 20,
-                  top: 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text("Edit Vehicle Details",
-                      style: TextStyle(color: Colors.white, fontSize: 18)),
-                  const SizedBox(height: 20),
-
-                  DropdownButtonFormField<String>(
-                    value: vehicleType,
-                    dropdownColor: Colors.black,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: _dec("Vehicle Type"),
-                    items: const [
-                      DropdownMenuItem(
-                          value: "Car", child: Text("Car (4 seats)")),
-                      DropdownMenuItem(
-                          value: "Bike", child: Text("Bike (1 seat)")),
-                      DropdownMenuItem(
-                          value: "SUV", child: Text("SUV (6 seats)")),
-                      DropdownMenuItem(
-                          value: "Bus", child: Text("Bus (20+ seats)")),
-                      DropdownMenuItem(value: "Other", child: Text("Other")),
+                final shouldPop = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    backgroundColor: const Color(0xFF1E1E1E),
+                    title: const Text("Discard Changes?",
+                        style: TextStyle(color: Colors.white)),
+                    content: const Text(
+                        "You have unsaved changes. Are you sure you want to discard them?",
+                        style: TextStyle(color: Colors.white70)),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text("Cancel")),
+                      TextButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text("Discard",
+                              style: TextStyle(color: Colors.redAccent))),
                     ],
-                    onChanged: (v) => setState(() => vehicleType = v!),
                   ),
+                );
 
-                  const SizedBox(height: 10),
-                  _input("Vehicle Model", vm,
-                      errorText: vmError,
-                      onChanged: (_) => setState(() => vmError = null)),
+                if (shouldPop == true) {
+                  setState(() => forcePop = true);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (context.mounted) Navigator.of(context).pop();
+                  });
+                }
+              },
+              child: Padding(
+                padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(context).viewInsets.bottom,
+                    left: 20,
+                    right: 20,
+                    top: 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(isEditing ? "Edit Vehicle" : "Add Vehicle",
+                        style: TextStyle(color: Colors.white, fontSize: 18)),
+                    const SizedBox(height: 20),
+                    DropdownButtonFormField<String>(
+                      value: vehicleType,
+                      dropdownColor: Colors.black,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: _dec("Vehicle Type"),
+                      items: const [
+                        DropdownMenuItem(
+                            value: "Car", child: Text("Car (4 seats)")),
+                        DropdownMenuItem(
+                            value: "Bike", child: Text("Bike (1 seat)")),
+                        DropdownMenuItem(
+                            value: "SUV", child: Text("SUV (6 seats)")),
+                        DropdownMenuItem(
+                            value: "Bus", child: Text("Bus (20+ seats)")),
+                        DropdownMenuItem(value: "Other", child: Text("Other")),
+                      ],
+                      onChanged: (v) => setState(() => vehicleType = v!),
+                    ),
+                    const SizedBox(height: 10),
+                    _input("Vehicle Model", vm,
+                        errorText: vmError,
+                        onChanged: (_) => setState(() => vmError = null)),
+                    const SizedBox(height: 10),
+                    _input("Vehicle Color", vc,
+                        errorText: vcError,
+                        onChanged: (_) => setState(() => vcError = null)),
+                    const SizedBox(height: 10),
+                    _input("Vehicle Number", vn,
+                        errorText: vnError,
+                        onChanged: (_) => setState(() => vnError = null)),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                          disabledBackgroundColor: Colors.white24,
+                          disabledForegroundColor: Colors.white38),
+                      onPressed: isModified
+                          ? () async {
+                              bool isValid = true;
 
-                  const SizedBox(height: 10),
-                  _input("Vehicle Color", vc,
-                      errorText: vcError,
-                      onChanged: (_) => setState(() => vcError = null)),
+                              setState(() {
+                                vmError = null;
+                                vnError = null;
+                                vcError = null;
+                              });
 
-                  const SizedBox(height: 10),
-                  _input("Vehicle Number", vn,
-                      errorText: vnError,
-                      onChanged: (_) => setState(() => vnError = null)),
+                              if (vm.text.trim().isEmpty) {
+                                vmError = "Model is required";
+                                isValid = false;
+                              }
 
-                  const SizedBox(height: 20),
+                              if (vc.text.trim().isEmpty) {
+                                vcError = "Color is required";
+                                isValid = false;
+                              }
 
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black,
-                        disabledBackgroundColor: Colors.white24,
-                        disabledForegroundColor: Colors.white38),
-                    onPressed: isModified
-                        ? () async {
-                            bool isValid = true;
+                              final vNum = vn.text
+                                  .trim()
+                                  .toUpperCase()
+                                  .replaceAll(RegExp(r'[^A-Z0-9]'), '');
+                              final vReg = RegExp(
+                                  r"^[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{4}$");
 
-                            setState(() {
-                              vmError = null;
-                              vnError = null;
-                              vcError = null;
-                            });
+                              if (vn.text.trim().isEmpty) {
+                                vnError = "Number is required";
+                                isValid = false;
+                              } else if (!vReg.hasMatch(vNum)) {
+                                vnError = "Invalid format (e.g. MH12AB1234)";
+                                isValid = false;
+                              }
 
-                            if (vm.text.trim().isEmpty) {
-                              vmError = "Model is required";
-                              isValid = false;
+                              setState(() {});
+                              if (!isValid) return;
+
+                              final data = {
+                                "vehicleModel": vm.text.trim(),
+                                "vehicleNumber": vNum,
+                                "vehicleColor": vc.text.trim(),
+                                "vehicleType": vehicleType,
+                              };
+
+                              if (isEditing) {
+                                await _userRepo.updateVehicle(
+                                    uid!, d!['id'], data);
+                              } else {
+                                await _userRepo.addVehicle(uid!, data);
+                              }
+
+                              if (context.mounted) Navigator.pop(context);
                             }
-
-                            if (vc.text.trim().isEmpty) {
-                              vcError = "Color is required";
-                              isValid = false;
-                            }
-
-                            if (vn.text.trim().isEmpty) {
-                              vnError = "Number is required";
-                              isValid = false;
-                            } else if (vn.text.trim().length < 4) {
-                              vnError = "Invalid vehicle number";
-                              isValid = false;
-                            }
-
-                            setState(() {});
-                            if (!isValid) return;
-
-                            await _userRepo.updateUserData(uid!, {
-                              "vehicleModel": vm.text.trim(),
-                              "vehicleNumber": vn.text.trim(),
-                              "vehicleColor": vc.text.trim(),
-                              "vehicleType": vehicleType,
-                            });
-
+                          : null,
+                      child: const Padding(
+                        padding: EdgeInsets.all(10),
+                        child: Text("Save"),
+                      ),
+                    ),
+                    if (isEditing) ...[
+                      const SizedBox(height: 10),
+                      TextButton(
+                        onPressed: () async {
+                          final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (c) => AlertDialog(
+                                    backgroundColor: const Color(0xFF1E1E1E),
+                                    title: const Text("Delete Vehicle?",
+                                        style: TextStyle(color: Colors.white)),
+                                    actions: [
+                                      TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(c, false),
+                                          child: const Text("Cancel")),
+                                      TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(c, true),
+                                          child: const Text("Delete",
+                                              style: TextStyle(
+                                                  color: Colors.red))),
+                                    ],
+                                  ));
+                          if (confirm == true) {
+                            await _userRepo.deleteVehicle(uid!, d!['id']);
                             if (context.mounted) Navigator.pop(context);
                           }
-                        : null,
-                    child: const Padding(
-                      padding: EdgeInsets.all(10),
-                      child: Text("Save"),
-                    ),
-                  )
-                ],
+                        },
+                        child: const Text("Delete Vehicle",
+                            style: TextStyle(color: Colors.redAccent)),
+                      )
+                    ]
+                  ],
+                ),
               ),
-            ),
-          );
-        },
-      );
-    },
-  );
-}
+            );
+          },
+        );
+      },
+    );
+  }
 
   InputDecoration _dec(String t, {String? errorText}) => InputDecoration(
       labelText: t,
@@ -224,108 +265,95 @@ class _VehicleProfileScreenState extends State<VehicleProfileScreen> {
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
         backgroundColor: Colors.black,
-        title: const Text("Vehicle Details", style: TextStyle(color: Colors.white)),
+        title: const Text("My Vehicles", style: TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: StreamBuilder<Map<String, dynamic>?>(
-        stream: _userRepo.getUserStream(uid!),
+      body: StreamBuilder<List<Map<String, dynamic>>>(
+        stream: _userRepo.getUserVehicles(uid!),
         builder: (context, snap) {
-          final data = snap.data ?? {};
-          final safeData = Map<String, dynamic>.from(data);
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(
+                child: CircularProgressIndicator(color: Colors.white));
+          }
 
-          final vType = data['vehicleType'] ?? "Not Added";
-          final vModel = data['vehicleModel'] ?? "Not Added";
-          final vColor = data['vehicleColor'] ?? "Not Added";
-          final vNumber = data['vehicleNumber'] ?? "Not Added";
+          final vehicles = snap.data ?? [];
 
-          return Column(
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(30),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.black,
-                          border: Border.all(
-                              color: Colors.greenAccent.withOpacity(0.5),
-                              width: 2),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.greenAccent.withOpacity(0.2),
-                              blurRadius: 20,
-                              spreadRadius: 5,
-                            ),
-                          ],
-                        ),
-                        child: const Icon(Icons.directions_car, size: 60, color: Colors.white),
-                      ),
-                      const SizedBox(height: 30),
-                      
-                      _sectionHeader("Vehicle Information"),
-                      _tile("Type", vType),
-                      _tile("Model", vModel),
-                      _tile("Color", vColor),
-                      _tile("Number", vNumber),
-                    ],
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: () => _openEditVehicleSheet(context, safeData),
+          if (vehicles.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.directions_car,
+                      size: 80, color: Colors.white24),
+                  const SizedBox(height: 20),
+                  const Text("No vehicles added yet",
+                      style: TextStyle(color: Colors.white54, fontSize: 16)),
+                  const SizedBox(height: 30),
+                  ElevatedButton(
+                    onPressed: () => _openVehicleSheet(context),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
                       foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: const Text("Edit Vehicle",
-                        style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold)),
+                    child: const Text("Add Vehicle"),
+                  )
+                ],
+              ),
+            );
+          }
+
+          return ListView.separated(
+            padding: const EdgeInsets.all(20),
+            itemCount: vehicles.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 16),
+            itemBuilder: (context, index) {
+              final v = vehicles[index];
+              return Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: ListTile(
+                  contentPadding: const EdgeInsets.all(16),
+                  leading: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.black,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child:
+                        const Icon(Icons.directions_car, color: Colors.white),
+                  ),
+                  title: Text(v['vehicleModel'] ?? "Unknown Model",
+                      style: const TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.bold)),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 4),
+                      Text("${v['vehicleColor']} • ${v['vehicleType']}",
+                          style: const TextStyle(color: Colors.white70)),
+                      Text(v['vehicleNumber'] ?? "",
+                          style: const TextStyle(color: Colors.white54)),
+                    ],
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.edit, color: Colors.white70),
+                    onPressed: () => _openVehicleSheet(context, v),
                   ),
                 ),
-              ),
-            ],
+              );
+            },
           );
         },
       ),
-    );
-  }
-
-  Widget _sectionHeader(String title) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Text(title,
-            style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 14,
-                fontWeight: FontWeight.bold)),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _openVehicleSheet(context),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        child: const Icon(Icons.add),
       ),
     );
   }
-
-  Widget _tile(String t, String v) => Container(
-        padding: const EdgeInsets.all(16),
-        margin: const EdgeInsets.only(bottom: 10),
-        decoration: BoxDecoration(
-            color: const Color(0xFF1E1E1E),
-            borderRadius: BorderRadius.circular(12)),
-        child: Row(
-          children: [
-            Text(t, style: const TextStyle(color: Colors.white54)),
-            const Spacer(),
-            Text(v, style: const TextStyle(color: Colors.white)),
-          ],
-        ),
-      );
 }

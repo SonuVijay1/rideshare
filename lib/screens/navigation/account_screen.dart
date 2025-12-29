@@ -423,7 +423,7 @@ class _AccountScreenState extends State<AccountScreen>
 
                               const SizedBox(height: 20),
                               section("Vehicle Details"),
-                              _tile("Vehicle Profile", "View & Edit",
+                              _tile("My Vehicles", "Manage",
                                   onTap: () => Navigator.push(
                                       context,
                                       MaterialPageRoute(
@@ -450,10 +450,35 @@ class _AccountScreenState extends State<AccountScreen>
                   Padding(
                     padding: const EdgeInsets.all(20),
                     child: _logoutButton(() async {
-                      await _userRepo.signOut();
-                      if (context.mounted) {
-                        Navigator.pushNamedAndRemoveUntil(
-                            context, "/login", (route) => false);
+                      final shouldLogout = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          backgroundColor: const Color(0xFF1E1E1E),
+                          title: const Text("Log Out",
+                              style: TextStyle(color: Colors.white)),
+                          content: const Text(
+                              "Are you sure you want to log out?",
+                              style: TextStyle(color: Colors.white70)),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text("Cancel"),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text("Log Out",
+                                  style: TextStyle(color: Colors.redAccent)),
+                            ),
+                          ],
+                        ),
+                      );
+
+                      if (shouldLogout == true) {
+                        await _userRepo.signOut();
+                        if (context.mounted) {
+                          Navigator.pushNamedAndRemoveUntil(
+                              context, "/login", (route) => false);
+                        }
                       }
                     }),
                   ),
@@ -594,7 +619,9 @@ class _AccountScreenState extends State<AccountScreen>
                 children: [
                   _statItem("Cancelled", "$cancelled"),
                   _statItem("Frequency", cancelStatus,
-                      icon: Icons.info_outline, iconColor: Colors.white70),
+                      icon: Icons.info_outline,
+                      iconColor: Colors.white70,
+                      onTap: _showFrequencyInfo),
                 ],
               ),
             ],
@@ -604,26 +631,65 @@ class _AccountScreenState extends State<AccountScreen>
     );
   }
 
-  Widget _statItem(String label, String value,
-      {IconData? icon, Color? iconColor}) {
-    return Column(
-      children: [
-        Row(
+  void _showFrequencyInfo() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text("Cancellation Frequency",
+            style: TextStyle(color: Colors.white)),
+        content: Column(
           mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) Icon(icon, size: 16, color: iconColor),
-            if (icon != null) const SizedBox(width: 4),
-            Text(value,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold)),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Text("This indicates how often a user cancels rides.",
+                style: TextStyle(color: Colors.white70)),
+            SizedBox(height: 10),
+            Text("• Never: 0% cancellations",
+                style: TextStyle(color: Colors.white54, fontSize: 13)),
+            Text("• Rarely: Up to 10% cancellations",
+                style: TextStyle(color: Colors.white54, fontSize: 13)),
+            Text("• Sometimes: 10-40% cancellations",
+                style: TextStyle(color: Colors.white54, fontSize: 13)),
+            Text("• Often: > 40% cancellations",
+                style: TextStyle(color: Colors.white54, fontSize: 13)),
+            Text("• Always: 100% cancellations",
+                style: TextStyle(color: Colors.white54, fontSize: 13)),
           ],
         ),
-        const SizedBox(height: 4),
-        Text(label,
-            style: const TextStyle(color: Colors.white54, fontSize: 12)),
-      ],
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statItem(String label, String value,
+      {IconData? icon, Color? iconColor, VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) Icon(icon, size: 16, color: iconColor),
+              if (icon != null) const SizedBox(width: 4),
+              Text(value,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(label,
+              style: const TextStyle(color: Colors.white54, fontSize: 12)),
+        ],
+      ),
     );
   }
 

@@ -25,6 +25,11 @@ abstract class UserRepository {
   Future<void> verifyBeforeUpdateEmail(String newEmail);
   Future<bool> isEmailInUse(String email);
   Future<void> signOut();
+  Stream<List<Map<String, dynamic>>> getUserVehicles(String uid);
+  Future<void> addVehicle(String uid, Map<String, dynamic> data);
+  Future<void> updateVehicle(
+      String uid, String vehicleId, Map<String, dynamic> data);
+  Future<void> deleteVehicle(String uid, String vehicleId);
 }
 
 class FirebaseUserRepository implements UserRepository {
@@ -140,5 +145,51 @@ class FirebaseUserRepository implements UserRepository {
   @override
   Future<void> signOut() async {
     await _auth.signOut();
+  }
+
+  @override
+  Stream<List<Map<String, dynamic>>> getUserVehicles(String uid) {
+    return _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('vehicles')
+        .snapshots()
+        .map((snap) => snap.docs.map((d) {
+              final data = d.data();
+              data['id'] = d.id;
+              return data;
+            }).toList());
+  }
+
+  @override
+  Future<void> addVehicle(String uid, Map<String, dynamic> data) async {
+    await _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('vehicles')
+        .add(data);
+    await updateUserData(uid, data);
+  }
+
+  @override
+  Future<void> updateVehicle(
+      String uid, String vehicleId, Map<String, dynamic> data) async {
+    await _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('vehicles')
+        .doc(vehicleId)
+        .update(data);
+    await updateUserData(uid, data);
+  }
+
+  @override
+  Future<void> deleteVehicle(String uid, String vehicleId) async {
+    await _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('vehicles')
+        .doc(vehicleId)
+        .delete();
   }
 }
