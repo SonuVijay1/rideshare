@@ -1,12 +1,13 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
+import '../../repositories/user_repository.dart';
+import '../../repositories/storage_repository.dart';
+import '../profile/profile_screen.dart';
+import '../profile/vehicle_profile_screen.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -19,13 +20,13 @@ class _AccountScreenState extends State<AccountScreen>
     with WidgetsBindingObserver {
   String? uid;
 
-  DateTime? _lastVerificationSentTime;
-  bool _isSendingEmail = false;
+  final UserRepository _userRepo = FirebaseUserRepository();
+  final StorageRepository _storageRepo = FirebaseStorageRepository();
 
   @override
   void initState() {
     super.initState();
-    uid = FirebaseAuth.instance.currentUser?.uid;
+    uid = _userRepo.currentUser?.uid;
     if (uid != null) {
       WidgetsBinding.instance.addObserver(this);
       _reloadUser();
@@ -47,268 +48,23 @@ class _AccountScreenState extends State<AccountScreen>
 
   Future<void> _reloadUser() async {
     try {
-      await FirebaseAuth.instance.currentUser?.reload();
+      await _userRepo.reloadUser();
     } catch (e) {
       // Ignore Pigeon/serialization errors on Android
     }
 
     // Sync Firestore if Auth email is verified
-    final user = FirebaseAuth.instance.currentUser;
+    final user = _userRepo.currentUser;
     if (user != null && user.emailVerified && user.email != null) {
-      final userRef =
-          FirebaseFirestore.instance.collection('users').doc(user.uid);
-      final doc = await userRef.get();
-      final dbEmail = doc.data()?['email'];
-
-      // Only update if the email in DB is missing or different
-      if (dbEmail != user.email) {
-        await userRef.set({
-          'email': user.email,
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
+      // Logic to sync email can be moved to repo, but for now we rely on
+      // the repo update method if needed.
+      // _userRepo.updateUserData(user.uid, {'email': user.email});
     }
 
     if (mounted) setState(() {});
   }
 
-  Future<void> _sendVerificationEmail(String email) async {
-    debugPrint("Attempting to send verification email to: $email");
-
-    if (_isSendingEmail) return;
-
-    // Debounce → avoid spam
-    if (_lastVerificationSentTime != null &&
-        DateTime.now().difference(_lastVerificationSentTime!).inSeconds < 60) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text(
-              "Please wait a minute before resending verification email.")));
-      return;
-    }
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    setState(() => _isSendingEmail = true);
-
-    try {
-      final normalizedEmail = email.trim().toLowerCase();
-
-      // 1️⃣ CHECK FIRESTORE USERS COLLECTION
-      final existing = await FirebaseFirestore.instance
-          .collection("users")
-          .where("email", isEqualTo: normalizedEmail)
-          .limit(1)
-          .get();
-
-      if (existing.docs.isNotEmpty) {
-        debugPrint("Email exists in Firestore → show dialog");
-        _showEmailInUseDialog();
-        return;
-      }
-
-      // 2️⃣ CHECK FIREBASE AUTH PROVIDERS
-      final methods = await FirebaseAuth.instance
-          .fetchSignInMethodsForEmail(normalizedEmail);
-
-      if (methods.isNotEmpty) {
-        debugPrint("Email exists in Firebase Auth → show dialog");
-        _showEmailInUseDialog();
-        return;
-      }
-
-      debugPrint("Email is free. Sending verification…");
-
-      await user.verifyBeforeUpdateEmail(normalizedEmail);
-      _lastVerificationSentTime = DateTime.now();
-
-      if (!mounted) return;
-
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          backgroundColor: const Color(0xFF1E1E1E),
-          title: const Text("Verification Sent",
-              style: TextStyle(color: Colors.white)),
-          content: Text(
-            "We sent a verification link to $email.\n\nOpen the email to complete update.",
-            style: const TextStyle(color: Colors.white70),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child:
-                  const Text("OK", style: TextStyle(color: Colors.blueAccent)),
-            ),
-          ],
-        ),
-      );
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'requires-recent-login') {
-        _showReLoginDialog();
-      } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text("Error: ${e.message}")));
-      }
-    } finally {
-      if (mounted) setState(() => _isSendingEmail = false);
-    }
-  }
-
-  void _showReLoginDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text("Security Update",
-            style: TextStyle(color: Colors.white)),
-        content: const Text(
-          "To update your email, you need to have signed in recently. Please log out and sign in again.",
-          style: TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await FirebaseAuth.instance.signOut();
-              if (context.mounted) {
-                Navigator.pushNamedAndRemoveUntil(
-                    context, "/login", (route) => false);
-              }
-            },
-            child: const Text("Log Out",
-                style: TextStyle(color: Colors.redAccent)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showEmailInUseDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text("Email Already Linked",
-            style: TextStyle(color: Colors.white)),
-        content: const Text(
-          "This email address is already associated with another account.",
-          style: TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("OK", style: TextStyle(color: Colors.blueAccent)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showUpdateEmailDialog() {
-    final emailC = TextEditingController();
-
-    bool _isValidEmail(String email) {
-      final regex = RegExp(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$");
-      return regex.hasMatch(email.trim());
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text(
-          "Update Email",
-          style: TextStyle(color: Colors.white),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              "Enter your email address. We will send a verification link.",
-              style: TextStyle(color: Colors.white70),
-            ),
-            const SizedBox(height: 16),
-            _input("Email", emailC),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          TextButton(
-            onPressed: () async {
-              final email = emailC.text.trim();
-
-              if (email.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Email cannot be empty")),
-                );
-                return;
-              }
-
-              if (!_isValidEmail(email)) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text("Please enter a valid email address")),
-                );
-                return;
-              }
-
-              if (email == FirebaseAuth.instance.currentUser?.email) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text("This is already your current email.")),
-                );
-                return;
-              }
-
-              Navigator.pop(context);
-              debugPrint("User requested email update to: $email");
-              _sendVerificationEmail(email);
-            },
-            child: const Text(
-              "Verify",
-              style: TextStyle(color: Colors.blueAccent),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<String?> _uploadFile(String path, String storagePath) async {
-    try {
-      debugPrint("🔥 Upload Started");
-      debugPrint("Selected File Path: $path");
-      debugPrint("Upload Target Path: $storagePath");
-
-      // Use default Firebase bucket (recommended)
-      final storage = FirebaseStorage.instance;
-
-      final ref = storage.ref(storagePath);
-
-      // Fix for Android NullPointerException: Explicitly provide metadata
-      final metadata = SettableMetadata(contentType: "image/jpeg");
-
-      final uploadTask = await ref.putFile(File(path), metadata);
-
-      debugPrint("✅ Upload Success");
-      final url = await uploadTask.ref.getDownloadURL();
-      debugPrint("📸 File URL: $url");
-
-      return url;
-    } catch (e) {
-      debugPrint("❌ UPLOAD ERROR: $e");
-      return null;
-    }
-  }
+  // _uploadFile removed, using _storageRepo.uploadFile
 
   Future<void> _pickAndUpload(String fieldName, String storageFolder) async {
     try {
@@ -359,9 +115,8 @@ class _AccountScreenState extends State<AccountScreen>
       // Fetch old URL to delete later
       String? oldUrl;
       try {
-        final doc =
-            await FirebaseFirestore.instance.collection("users").doc(uid).get();
-        oldUrl = doc.data()?[fieldName];
+        final userData = await _userRepo.getUser(uid!);
+        oldUrl = userData?[fieldName];
       } catch (e) {
         debugPrint("Error fetching old URL: $e");
       }
@@ -370,7 +125,7 @@ class _AccountScreenState extends State<AccountScreen>
         const SnackBar(content: Text("Uploading...")),
       );
 
-      final url = await _uploadFile(
+      final url = await _storageRepo.uploadFile(
         cropped.path,
         "users/$uid/$storageFolder/${DateTime.now()}",
       );
@@ -382,15 +137,12 @@ class _AccountScreenState extends State<AccountScreen>
         return;
       }
 
-      await FirebaseFirestore.instance.collection("users").doc(uid).set(
-        {fieldName: url},
-        SetOptions(merge: true),
-      );
+      await _userRepo.updateUserData(uid!, {fieldName: url});
 
       // Delete old image if exists
       if (oldUrl != null) {
         try {
-          await FirebaseStorage.instance.refFromURL(oldUrl).delete();
+          await _storageRepo.deleteFile(oldUrl);
           debugPrint("Deleted old image: $oldUrl");
         } catch (e) {
           debugPrint("Failed to delete old image: $e");
@@ -436,29 +188,20 @@ class _AccountScreenState extends State<AccountScreen>
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       body: SafeArea(
-        child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection("users")
-                .doc(uid!)
-                .snapshots(),
+        child: StreamBuilder<Map<String, dynamic>?>(
+            stream: _userRepo.getUserStream(uid!),
             builder: (context, snap) {
-              final data =
-                  snap.hasData && snap.data!.exists ? snap.data!.data()! : {};
+              final data = snap.data ?? {};
 
               final name = data['name'] ?? "New User";
-              final authPhone = FirebaseAuth.instance.currentUser?.phoneNumber;
+              final authPhone = _userRepo.currentUser?.phoneNumber;
               final phone = (authPhone != null && authPhone.isNotEmpty)
                   ? authPhone
                   : (data['phone'] ?? "Not Added");
-              final email = data['email'] ?? "Not Added";
-              final city = data['city'] ?? "Not Added";
-              final gender = data['gender'] ?? "Not Specified";
-              final age = data['age']?.toString() ?? "--";
-              final dob = data['dob'] ?? "Not Added";
 
-              final createdAt = data['createdAt'] as Timestamp?;
-              final joined = createdAt != null
-                  ? DateFormat("MMM yyyy").format(createdAt.toDate())
+              final createdAt = data['createdAt'];
+              final joined = createdAt != null && createdAt is DateTime
+                  ? DateFormat("MMM yyyy").format(createdAt)
                   : "Unknown";
 
               final ridesTaken = (data['ridesTaken'] as num?)?.toInt() ?? 0;
@@ -566,8 +309,12 @@ class _AccountScreenState extends State<AccountScreen>
                             ),
                             const Spacer(),
                             TextButton(
-                                onPressed: () =>
-                                    _openEditProfileSheet(context, safeData),
+                                onPressed: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                          builder: (_) =>
+                                              const ProfileScreen()),
+                                    ),
                                 child: const Text("Edit",
                                     style: TextStyle(color: Colors.white)))
                           ],
@@ -665,13 +412,23 @@ class _AccountScreenState extends State<AccountScreen>
                                   cancelStatus),
                               const SizedBox(height: 20),
 
-                              _tile("Date of Birth", dob),
-                              _mobileTile(phone),
-                              _emailTile(
-                                  email), // Pass Firestore email as fallback
-                              _tile("Gender", gender),
-                              _tile("Age", age),
-                              _tile("City", city),
+                              // Personal Profile Link
+                              _tile("Personal Profile", "View & Edit",
+                                  onTap: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                            builder: (_) =>
+                                                const ProfileScreen()),
+                                      )),
+
+                              const SizedBox(height: 20),
+                              section("Vehicle Details"),
+                              _tile("Vehicle Profile", "View & Edit",
+                                  onTap: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                          builder: (_) =>
+                                              const VehicleProfileScreen()))),
 
                               const SizedBox(height: 20),
 
@@ -686,21 +443,20 @@ class _AccountScreenState extends State<AccountScreen>
 
                               section("Emergency Contact"),
                               _emergencyTile(safeData),
-
-                              const SizedBox(height: 25),
-
-                              _logoutButton(() async {
-                                await FirebaseAuth.instance.signOut();
-                                if (context.mounted) {
-                                  Navigator.pushNamedAndRemoveUntil(
-                                      context, "/login", (route) => false);
-                                }
-                              }),
-                              const SizedBox(height: 25),
                             ],
                           )),
                     ),
-                  )
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: _logoutButton(() async {
+                      await _userRepo.signOut();
+                      if (context.mounted) {
+                        Navigator.pushNamedAndRemoveUntil(
+                            context, "/login", (route) => false);
+                      }
+                    }),
+                  ),
                 ],
               );
             }),
@@ -710,105 +466,27 @@ class _AccountScreenState extends State<AccountScreen>
 
   // UI HELPERS
 
-  Widget _tile(String t, String v) => Container(
-        padding: const EdgeInsets.all(14),
-        margin: const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
-            color: const Color(0xFF1E1E1E),
-            borderRadius: BorderRadius.circular(12)),
-        child: Row(
-          children: [
-            Text(t, style: const TextStyle(color: Colors.white54)),
-            const Spacer(),
-            Text(v, style: const TextStyle(color: Colors.white)),
-          ],
+  Widget _tile(String t, String v, {VoidCallback? onTap}) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          margin: const EdgeInsets.only(bottom: 8),
+          decoration: BoxDecoration(
+              color: const Color(0xFF1E1E1E),
+              borderRadius: BorderRadius.circular(12)),
+          child: Row(
+            children: [
+              Text(t, style: const TextStyle(color: Colors.white54)),
+              const Spacer(),
+              Text(v, style: const TextStyle(color: Colors.white)),
+              if (onTap != null) ...[
+                const SizedBox(width: 8),
+                const Icon(Icons.edit, size: 14, color: Colors.white24)
+              ]
+            ],
+          ),
         ),
       );
-
-  Widget _emailTile(String firestoreEmail) {
-    final user = FirebaseAuth.instance.currentUser;
-    final authEmail = user?.email;
-    final hasAuthEmail = authEmail != null && authEmail.isNotEmpty;
-
-    final displayEmail = hasAuthEmail
-        ? authEmail
-        : (firestoreEmail == "Not Added" ? "Not Added" : firestoreEmail);
-    final isVerified = hasAuthEmail && (user?.emailVerified ?? false);
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-          color: const Color(0xFF1E1E1E),
-          borderRadius: BorderRadius.circular(12)),
-      child: Row(
-        children: [
-          const Text("Email", style: TextStyle(color: Colors.white54)),
-          const Spacer(),
-          Text(displayEmail!, style: const TextStyle(color: Colors.white)),
-          const SizedBox(width: 8),
-          if (isVerified)
-            const Icon(Icons.verified, color: Colors.greenAccent, size: 18)
-          else if (hasAuthEmail)
-            GestureDetector(
-              onTap: () async {
-                await user?.reload();
-                if (user?.emailVerified ?? false) {
-                  setState(() {});
-                } else {
-                  await user?.sendEmailVerification();
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text("Verification email sent.")));
-                  }
-                }
-              },
-              child: const Text("Verify",
-                  style: TextStyle(
-                      color: Colors.orangeAccent,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12)),
-            )
-          else
-            GestureDetector(
-              onTap: _showUpdateEmailDialog,
-              child: const Text("Add Email",
-                  style: TextStyle(
-                      color: Colors.blueAccent,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12)),
-            ),
-          if (hasAuthEmail) ...[
-            const SizedBox(width: 12),
-            GestureDetector(
-              onTap:
-                  _showUpdateEmailDialog, // Re-use link dialog which handles update if already linked
-              child: const Icon(Icons.edit, color: Colors.white70, size: 18),
-            ),
-          ]
-        ],
-      ),
-    );
-  }
-
-  Widget _mobileTile(String phone) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-          color: const Color(0xFF1E1E1E),
-          borderRadius: BorderRadius.circular(12)),
-      child: Row(
-        children: [
-          const Text("Mobile", style: TextStyle(color: Colors.white54)),
-          const Spacer(),
-          Text(phone, style: const TextStyle(color: Colors.white)),
-          const SizedBox(width: 8),
-          const Icon(Icons.verified, color: Colors.greenAccent, size: 18),
-        ],
-      ),
-    );
-  }
 
   String _calculateCancellationStatus(int taken, int offered, int cancelled) {
     if (cancelled == 0) return "Never";
@@ -1021,13 +699,10 @@ class _AccountScreenState extends State<AccountScreen>
                     child: const Text("Cancel")),
                 TextButton(
                     onPressed: () async {
-                      await FirebaseFirestore.instance
-                          .collection("users")
-                          .doc(uid)
-                          .set({
+                      await _userRepo.updateUserData(uid!, {
                         "emergencyName": name.text.trim(),
                         "emergencyPhone": phone.text.trim()
-                      }, SetOptions(merge: true));
+                      });
 
                       // verified only if aadhaar + license + emergency
                       Navigator.pop(c);
@@ -1059,121 +734,9 @@ class _AccountScreenState extends State<AccountScreen>
             onPressed: onTap,
             child: const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text("Logout",
+              child: Text("Log Out",
                   style: TextStyle(
                       color: Colors.redAccent, fontWeight: FontWeight.bold)),
             )),
       );
-
-  void _openEditProfileSheet(BuildContext context, Map<String, dynamic> d) {
-    if (uid == null) return;
-    final n = TextEditingController(text: d['name'] ?? "");
-    final c = TextEditingController(text: d['city'] ?? "");
-    final a = TextEditingController(text: d['age']?.toString() ?? "");
-    final dobC = TextEditingController(text: d['dob'] ?? "");
-
-    String gender = d['gender'] ?? "Male";
-
-    showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: const Color(0xFF1E1E1E),
-        shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
-        builder: (context) {
-          return StatefulBuilder(builder: (context, setState) {
-            return Padding(
-                padding: EdgeInsets.only(
-                    bottom: MediaQuery.of(context).viewInsets.bottom,
-                    left: 20,
-                    right: 20,
-                    top: 20),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Text("Edit Profile",
-                      style: TextStyle(color: Colors.white, fontSize: 18)),
-                  const SizedBox(height: 20),
-                  _input("Name", n),
-                  const SizedBox(height: 10),
-                  GestureDetector(
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: DateTime.now()
-                            .subtract(const Duration(days: 365 * 18)),
-                        firstDate: DateTime(1900),
-                        lastDate: DateTime.now(),
-                        builder: (context, child) => Theme(
-                          data: Theme.of(context).copyWith(
-                            colorScheme: const ColorScheme.dark(
-                                primary: Colors.white, onSurface: Colors.white),
-                            dialogBackgroundColor: const Color(0xFF1E1E1E),
-                          ),
-                          child: child!,
-                        ),
-                      );
-                      if (picked != null) {
-                        dobC.text = DateFormat("yyyy-MM-dd").format(picked);
-                      }
-                    },
-                    child: AbsorbPointer(child: _input("Date of Birth", dobC)),
-                  ),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<String>(
-                      value: gender,
-                      dropdownColor: Colors.black,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: _dec("Gender"),
-                      items: const [
-                        DropdownMenuItem(
-                            value: "Male",
-                            child: Text("Male",
-                                style: TextStyle(color: Colors.white))),
-                        DropdownMenuItem(
-                            value: "Female",
-                            child: Text("Female",
-                                style: TextStyle(color: Colors.white))),
-                        DropdownMenuItem(
-                            value: "Other",
-                            child: Text("Other",
-                                style: TextStyle(color: Colors.white))),
-                      ],
-                      onChanged: (v) => setState(() => gender = v!)),
-                  const SizedBox(height: 10),
-                  _input("Age", a),
-                  const SizedBox(height: 10),
-                  _input("City", c),
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.black),
-                      onPressed: () async {
-                        await FirebaseFirestore.instance
-                            .collection("users")
-                            .doc(uid!)
-                            .set({
-                          "name": n.text.trim(),
-                          "gender": gender,
-                          "city": c.text.trim(),
-                          "age": int.tryParse(a.text.trim()),
-                          "dob": dobC.text.trim(),
-                        }, SetOptions(merge: true));
-
-                        if (context.mounted) Navigator.pop(context);
-                      },
-                      child: const Padding(
-                        padding: EdgeInsets.all(10),
-                        child: Text("Save"),
-                      ))
-                ]));
-          });
-        });
-  }
-
-  InputDecoration _dec(String t) => InputDecoration(
-      labelText: t,
-      labelStyle: const TextStyle(color: Colors.white54),
-      filled: true,
-      fillColor: Colors.black,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)));
 }

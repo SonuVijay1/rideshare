@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../services/autocomplete_service.dart';
 import '../../services/location_service.dart';
 import '../../screens/avlbl/available_rides_screen.dart';
 import '../../utils/geo_utils.dart';
+import '../../repositories/ride_repository.dart';
 
 class BookRideScreen extends StatefulWidget {
   const BookRideScreen({super.key});
@@ -55,6 +55,8 @@ class _BookRideScreenState extends State<BookRideScreen>
   // animation
   late final AnimationController _shakeController;
   late final Animation<double> _shakeAnimation;
+
+  final RideRepository _rideRepo = FirebaseRideRepository();
 
   @override
   void initState() {
@@ -203,16 +205,16 @@ class _BookRideScreenState extends State<BookRideScreen>
     setState(() => isSearching = true);
 
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collectionGroup("driverTrips")
-          .where("status", isEqualTo: "Upcoming")
-          .get();
+      // The repo now handles the query.
+      // Note: The repo implementation provided earlier returns raw data.
+      // We still need the filtering logic here or move it to repo.
+      // For this refactor, I'll fetch via repo and filter here to keep logic intact.
+      final rides =
+          await _rideRepo.searchRides(fromLat!, fromLng!, toLat!, toLng!, 1);
 
-      final matchedRides = <QueryDocumentSnapshot>[];
+      final matchedRides = <Map<String, dynamic>>[];
 
-      for (final doc in snapshot.docs) {
-        final ride = doc.data() as Map<String, dynamic>;
-
+      for (final ride in rides) {
         // Filter by time: show only rides >= (now - 1 hour)
         try {
           final dateStr = ride['date'] as String?;
@@ -231,7 +233,8 @@ class _BookRideScreenState extends State<BookRideScreen>
             }
             rideDt = rideDt.add(Duration(hours: t.hour, minutes: t.minute));
 
-            if (rideDt.isBefore(DateTime.now().subtract(const Duration(hours: 1)))) {
+            if (rideDt
+                .isBefore(DateTime.now().subtract(const Duration(hours: 1)))) {
               continue;
             }
           }
@@ -249,8 +252,7 @@ class _BookRideScreenState extends State<BookRideScreen>
 
         final pickupDist =
             calculateDistanceKm(fromLat!, fromLng!, rFromLat, rFromLng);
-        final dropDist =
-            calculateDistanceKm(toLat!, toLng!, rToLat, rToLng);
+        final dropDist = calculateDistanceKm(toLat!, toLng!, rToLat, rToLng);
 
         final userBearing =
             calculateBearing(fromLat!, fromLng!, toLat!, toLng!);
@@ -261,7 +263,7 @@ class _BookRideScreenState extends State<BookRideScreen>
         final normDiff = diff > 180 ? 360 - diff : diff;
 
         if (pickupDist <= 30 && dropDist <= 30 && normDiff <= 45) {
-          matchedRides.add(doc);
+          matchedRides.add(ride);
         }
       }
 
@@ -291,8 +293,7 @@ class _BookRideScreenState extends State<BookRideScreen>
     bool readOnly = false,
     VoidCallback? onTap,
   }) {
-    final hasError =
-        enableAutocomplete && (isFrom ? fromError : toError);
+    final hasError = enableAutocomplete && (isFrom ? fromError : toError);
 
     return AnimatedBuilder(
       animation: _shakeAnimation,
@@ -304,8 +305,7 @@ class _BookRideScreenState extends State<BookRideScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
             decoration: BoxDecoration(
               color: const Color(0xFF1E1E1E),
               borderRadius: BorderRadius.circular(16),
@@ -316,8 +316,7 @@ class _BookRideScreenState extends State<BookRideScreen>
             ),
             child: Row(
               children: [
-                Icon(icon,
-                    color: hasError ? Colors.redAccent : Colors.white70),
+                Icon(icon, color: hasError ? Colors.redAccent : Colors.white70),
                 const SizedBox(width: 12),
                 Expanded(
                   child: TextField(
@@ -337,26 +336,23 @@ class _BookRideScreenState extends State<BookRideScreen>
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
                       hintText: hint,
-                      hintStyle:
-                          const TextStyle(color: Colors.white54),
+                      hintStyle: const TextStyle(color: Colors.white54),
                       border: InputBorder.none,
                     ),
                   ),
                 ),
                 if (enableAutocomplete)
                   IconButton(
-                    icon: const Icon(Icons.my_location,
-                        color: Colors.white70),
+                    icon: const Icon(Icons.my_location, color: Colors.white70),
                     onPressed: () async {
-                      _lastEdited =
-                          isFrom ? LastEdited.from : LastEdited.to;
+                      _lastEdited = isFrom ? LastEdited.from : LastEdited.to;
 
                       controller.text = "Fetching current location…";
                       fromError = false;
                       toError = false;
 
-                      final loc = await _locationService
-                          .getCurrentLocationSuggestion();
+                      final loc =
+                          await _locationService.getCurrentLocationSuggestion();
                       if (loc == null) {
                         controller.clear();
                         return;
@@ -413,8 +409,7 @@ class _BookRideScreenState extends State<BookRideScreen>
             ),
             child: Row(
               children: [
-                const Icon(Icons.place,
-                    color: Colors.white70, size: 18),
+                const Icon(Icons.place, color: Colors.white70, size: 18),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
@@ -448,33 +443,33 @@ class _BookRideScreenState extends State<BookRideScreen>
   }
 
   void _swapLocations() {
-  if (fromLat == null || toLat == null) return;
+    if (fromLat == null || toLat == null) return;
 
-  setState(() {
-    // swap text
-    final tempText = fromController.text;
-    fromController.text = toController.text;
-    toController.text = tempText;
+    setState(() {
+      // swap text
+      final tempText = fromController.text;
+      fromController.text = toController.text;
+      toController.text = tempText;
 
-    // swap coords
-    final tempLat = fromLat;
-    final tempLng = fromLng;
-    fromLat = toLat;
-    fromLng = toLng;
-    toLat = tempLat;
-    toLng = tempLng;
+      // swap coords
+      final tempLat = fromLat;
+      final tempLng = fromLng;
+      fromLat = toLat;
+      fromLng = toLng;
+      toLat = tempLat;
+      toLng = tempLng;
 
-    // reset errors
-    fromError = false;
-    toError = false;
+      // reset errors
+      fromError = false;
+      toError = false;
 
-    // clear suggestions
-    _fromSuggestions.clear();
-    _toSuggestions.clear();
-  });
+      // clear suggestions
+      _fromSuggestions.clear();
+      _toSuggestions.clear();
+    });
 
-  _computeRoute();
-}
+    _computeRoute();
+  }
 
   /* ---------------- UI ---------------- */
   @override
@@ -498,16 +493,15 @@ class _BookRideScreenState extends State<BookRideScreen>
                       isFrom: true,
                     ),
                     _suggestions(_fromSuggestions, true),
-
                     const SizedBox(height: 6),
-Center(
-  child: IconButton(
-    icon: const Icon(Icons.swap_vert, color: Colors.white70, size: 28),
-    onPressed: _swapLocations,
-  ),
-),
-const SizedBox(height: 6),
-
+                    Center(
+                      child: IconButton(
+                        icon: const Icon(Icons.swap_vert,
+                            color: Colors.white70, size: 28),
+                        onPressed: _swapLocations,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
                     _inputCard(
                       hint: "Drop location",
                       icon: Icons.flag,
@@ -516,7 +510,6 @@ const SizedBox(height: 6),
                     ),
                     _suggestions(_toSuggestions, false),
                     const SizedBox(height: 15),
-
                     _inputCard(
                       hint: "Select date",
                       icon: Icons.calendar_today,
@@ -525,14 +518,12 @@ const SizedBox(height: 6),
                       onTap: _pickDate,
                     ),
                     const SizedBox(height: 15),
-
                     _inputCard(
                       hint: "Seats required",
                       icon: Icons.chair_alt,
                       controller: seatsController,
                     ),
                     const SizedBox(height: 10),
-
                     if (isFetchingRoute)
                       const CircularProgressIndicator(color: Colors.white)
                     else if (distanceKm != null)
@@ -541,7 +532,6 @@ const SizedBox(height: 6),
                         style: const TextStyle(
                             color: Colors.white70, fontSize: 13),
                       ),
-
                     const SizedBox(height: 30),
                     SizedBox(
                       width: double.infinity,
@@ -560,8 +550,7 @@ const SizedBox(height: 6),
                             : const Text(
                                 "Search Rides",
                                 style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold),
+                                    fontSize: 18, fontWeight: FontWeight.bold),
                               ),
                       ),
                     ),
@@ -580,8 +569,7 @@ const SizedBox(height: 6),
         padding: const EdgeInsets.all(24),
         decoration: const BoxDecoration(
           color: Colors.black,
-          borderRadius:
-              BorderRadius.vertical(bottom: Radius.circular(30)),
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
         ),
         child: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,

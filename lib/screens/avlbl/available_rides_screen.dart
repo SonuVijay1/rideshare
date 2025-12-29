@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../book/ride_details_screen.dart';
+import '../../repositories/ride_repository.dart';
 
 class AvailableRidesScreen extends StatelessWidget {
-  final List<QueryDocumentSnapshot> rides;
+  final List<Map<String, dynamic>> rides;
   final int requiredSeats;
 
   const AvailableRidesScreen({
@@ -20,7 +20,8 @@ class AvailableRidesScreen extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.black,
         elevation: 0,
-        title: const Text("Available Rides", style: TextStyle(color: Colors.white)),
+        title: const Text("Available Rides",
+            style: TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: rides.isEmpty
@@ -33,12 +34,12 @@ class AvailableRidesScreen extends StatelessWidget {
               separatorBuilder: (context, index) => const SizedBox(height: 16),
               itemBuilder: (context, index) {
                 final doc = rides[index];
-                final data = doc.data() as Map<String, dynamic>;
 
                 return _RideTile(
-                  initialData: data,
-                  rideRef: doc.reference,
+                  initialData: doc,
                   requiredSeats: requiredSeats,
+                  rideId: doc['rideId'],
+                  driverId: doc['driverId'],
                 );
               },
             ),
@@ -48,13 +49,17 @@ class AvailableRidesScreen extends StatelessWidget {
 
 class _RideTile extends StatelessWidget {
   final Map<String, dynamic> initialData;
-  final DocumentReference rideRef;
+  final String rideId;
+  final String driverId;
   final int requiredSeats;
+  final RideRepository _rideRepo = FirebaseRideRepository();
 
-  const _RideTile({
+  _RideTile({
+    super.key,
     required this.initialData,
-    required this.rideRef,
     required this.requiredSeats,
+    required this.rideId,
+    required this.driverId,
   });
 
   String _formatDate(String? dateStr) {
@@ -69,11 +74,11 @@ class _RideTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: rideRef.snapshots(),
+    return StreamBuilder<Map<String, dynamic>?>(
+      stream: _rideRepo.getRideStream(driverId, rideId),
       builder: (context, snapshot) {
-        final data = snapshot.hasData && snapshot.data != null && snapshot.data!.exists
-            ? snapshot.data!.data() as Map<String, dynamic>
+        final data = snapshot.hasData && snapshot.data != null
+            ? snapshot.data!
             : initialData;
 
         final seatsAvailable = data['seatsAvailable'] ?? 0;
@@ -87,7 +92,8 @@ class _RideTile extends StatelessWidget {
                     MaterialPageRoute(
                       builder: (_) => RideDetailsScreen(
                         rideData: data,
-                        rideReference: rideRef,
+                        rideId: rideId,
+                        driverId: driverId,
                       ),
                     ),
                   );
@@ -104,87 +110,99 @@ class _RideTile extends StatelessWidget {
           child: Opacity(
             opacity: isAvailable ? 1.0 : 0.5,
             child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E1E1E),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white10),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (!isAvailable)
-              Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.orangeAccent.withOpacity(0.3)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.info_outline, color: Colors.orangeAccent, size: 16),
-                    const SizedBox(width: 8),
-                    Text(
-                      seatsAvailable == 0 ? "Fully Booked" : "Not enough seats",
-                      style: const TextStyle(color: Colors.orangeAccent, fontSize: 12),
-                    ),
-                  ],
-                ),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E1E1E),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white10),
               ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.calendar_today, size: 14, color: Colors.white54),
-                    const SizedBox(width: 6),
-                    Text(
-                      "${_formatDate(data['date'])} • ${data['time'] ?? ''}",
-                      style: const TextStyle(
-                          color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w500),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!isAvailable)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: Colors.orangeAccent.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline,
+                              color: Colors.orangeAccent, size: 16),
+                          const SizedBox(width: 8),
+                          Text(
+                            seatsAvailable == 0
+                                ? "Fully Booked"
+                                : "Not enough seats",
+                            style: const TextStyle(
+                                color: Colors.orangeAccent, fontSize: 12),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.calendar_today,
+                              size: 14, color: Colors.white54),
+                          const SizedBox(width: 6),
+                          Text(
+                            "${_formatDate(data['date'])} • ${data['time'] ?? ''}",
+                            style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500),
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          "₹${data['price'] ?? '150'}",
+                          style: const TextStyle(
+                            color: Colors.greenAccent,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  child: Text(
-                    "₹${data['price'] ?? '150'}", 
-                    style: const TextStyle(
-                      color: Colors.greenAccent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  const Divider(color: Colors.white10, height: 24),
+                  _locationRow(Icons.circle, Colors.green, data['from'] ?? ''),
+                  Container(
+                    margin: const EdgeInsets.only(left: 11),
+                    height: 16,
+                    width: 2,
+                    color: Colors.white12,
                   ),
-                ),
-              ],
+                  _locationRow(
+                      Icons.location_on, Colors.redAccent, data['to'] ?? ''),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _infoItem(Icons.directions_car,
+                          "${(data['distanceKm'] as num?)?.round() ?? 0} km"),
+                      _infoItem(Icons.timer, data['duration'] ?? ''),
+                      _infoItem(Icons.airline_seat_recline_normal,
+                          "${data['seatsAvailable']} Seats"),
+                    ],
+                  ),
+                ],
+              ),
             ),
-            const Divider(color: Colors.white10, height: 24),
-            _locationRow(Icons.circle, Colors.green, data['from'] ?? ''),
-            Container(
-              margin: const EdgeInsets.only(left: 11),
-              height: 16,
-              width: 2,
-              color: Colors.white12,
-            ),
-            _locationRow(Icons.location_on, Colors.redAccent, data['to'] ?? ''),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _infoItem(Icons.directions_car, "${(data['distanceKm'] as num?)?.round() ?? 0} km"),
-                _infoItem(Icons.timer, data['duration'] ?? ''),
-                _infoItem(Icons.airline_seat_recline_normal, "${data['seatsAvailable']} Seats"),
-              ],
-            ),
-          ],
-        ),
-      ),
           ),
         );
       },

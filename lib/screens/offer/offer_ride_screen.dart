@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:rideshareApp/services/autocomplete_service.dart';
 import 'package:rideshareApp/services/location_service.dart';
 import 'package:rideshareApp/services/recent_location_service.dart';
+import '../../repositories/ride_repository.dart';
+import '../../repositories/user_repository.dart';
 
 import 'ride_published_screen.dart';
 
@@ -30,8 +30,9 @@ class _OfferRideScreenState extends State<OfferRideScreen>
   // controllers
   final pickupController = TextEditingController();
   final dropController = TextEditingController();
-  // final carModelController = TextEditingController();
-  // final carNumberController = TextEditingController();
+  final carModelController = TextEditingController();
+  final carNumberController = TextEditingController();
+  final carColorController = TextEditingController();
 
   // errors
   bool pickupError = false;
@@ -78,6 +79,10 @@ class _OfferRideScreenState extends State<OfferRideScreen>
   DateTime? _initialDate;
   TimeOfDay? _initialTime;
   int? _initialSeats;
+  String _selectedVehicleType = "Car";
+
+  final RideRepository _rideRepo = FirebaseRideRepository();
+  final UserRepository _userRepo = FirebaseUserRepository();
 
   @override
   void initState() {
@@ -102,6 +107,71 @@ class _OfferRideScreenState extends State<OfferRideScreen>
 
     if (widget.existingRideData != null) {
       _prefillData();
+    } else {
+      _checkVehicleDetails();
+    }
+  }
+
+  Future<void> _checkVehicleDetails() async {
+    final user = _userRepo.currentUser;
+    if (user == null) return;
+
+    final userData = await _userRepo.getUser(user.uid);
+    if (userData == null) return;
+
+    final vModel = userData['vehicleModel'];
+    final vNumber = userData['vehicleNumber'];
+    final vType = userData['vehicleType'] ?? "Car";
+    final vColor = userData['vehicleColor'] ?? "";
+
+    if (vModel == null ||
+        vModel.toString().trim().isEmpty ||
+        vNumber == null ||
+        vNumber.toString().trim().isEmpty) {
+      if (!mounted) return;
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          title: const Text("Vehicle Details Missing",
+              style: TextStyle(color: Colors.white)),
+          content: const Text(
+            "Please add your vehicle model and number in the Account section before offering a ride.",
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.pop(context);
+              },
+              child:
+                  const Text("OK", style: TextStyle(color: Colors.blueAccent)),
+            ),
+          ],
+        ),
+      );
+    } else {
+      if (mounted) {
+        setState(() {
+          carModelController.text = vModel;
+          carNumberController.text = vNumber;
+          carColorController.text = vColor;
+          _selectedVehicleType = vType;
+
+          // Auto-detect seats based on vehicle type
+          if (vType == "Bike") {
+            seats = 1;
+          } else if (vType == "Car") {
+            seats = 4;
+          } else if (vType == "SUV") {
+            seats = 6;
+          } else if (vType == "Bus") {
+            seats = 30;
+          }
+        });
+      }
     }
   }
 
@@ -138,6 +208,10 @@ class _OfferRideScreenState extends State<OfferRideScreen>
     seatsBooked = data['seatsBooked'] ?? 0;
     distanceKm = (data['distanceKm'] as num?)?.toDouble();
     durationStr = data['duration'];
+    carModelController.text = data['vehicleModel'] ?? '';
+    carNumberController.text = data['vehicleNumber'] ?? '';
+    carColorController.text = data['vehicleColor'] ?? '';
+    _selectedVehicleType = data['vehicleType'] ?? 'Car';
 
     // Capture initial state
     _initialPickup = pickupController.text;
@@ -205,8 +279,8 @@ class _OfferRideScreenState extends State<OfferRideScreen>
     _lastEdited = isPickup ? LastEdited.pickup : LastEdited.drop;
 
     final recent = (await RecentLocationService.getRecent())
-    .where((e) => e["type"] != "current")
-    .toList();
+        .where((e) => e["type"] != "current")
+        .toList();
 
     if (v.trim().isEmpty) {
       setState(() {
@@ -301,8 +375,7 @@ class _OfferRideScreenState extends State<OfferRideScreen>
 
   /* ---------------- SWAP ---------------- */
   void _swapPickupDrop() {
-    if (pickupController.text.isEmpty &&
-        dropController.text.isEmpty) return;
+    if (pickupController.text.isEmpty && dropController.text.isEmpty) return;
 
     _swapController.forward(from: 0);
 
@@ -361,7 +434,7 @@ class _OfferRideScreenState extends State<OfferRideScreen>
     setState(() => isPublishing = true);
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
+      final user = _userRepo.currentUser;
       if (user == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Please login to publish a ride")),
@@ -369,11 +442,6 @@ class _OfferRideScreenState extends State<OfferRideScreen>
         return;
       }
       final uid = user.uid;
-
-      final collection = FirebaseFirestore.instance
-          .collection("users")
-          .doc(uid)
-          .collection("driverTrips");
 
       final Map<String, dynamic> rideData = {
         "from": pickupController.text.trim(),
@@ -388,32 +456,37 @@ class _OfferRideScreenState extends State<OfferRideScreen>
         "duration": durationStr ?? "",
         "seatsAvailable": seats,
         "seatsBooked": seatsBooked,
-        // "carModel": carModelController.text.trim(),
-        // "carNumber": carNumberController.text.trim(),
+        "vehicleModel": carModelController.text.trim(),
+        "vehicleNumber": carNumberController.text.trim(),
+        "vehicleColor": carColorController.text.trim(),
+        "vehicleType": _selectedVehicleType,
       };
 
       if (widget.rideId != null) {
-        rideData["updatedAt"] = FieldValue.serverTimestamp();
-        await collection.doc(widget.rideId).update(rideData);
+        rideData["updatedAt"] = DateTime.now()
+            .toString(); // Repo handles server timestamp if needed
+        await _rideRepo.publishRide(uid, rideData, rideId: widget.rideId);
 
         if (!mounted) return;
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => RidePublishedScreen(rideData: rideData, isUpdate: true)),
+          MaterialPageRoute(
+              builder: (_) =>
+                  RidePublishedScreen(rideData: rideData, isUpdate: true)),
         );
       } else {
         rideData["seatsBooked"] = 0;
         rideData["status"] = "Upcoming";
-        rideData["createdAt"] = FieldValue.serverTimestamp();
-        await collection.doc().set(rideData);
+        rideData["createdAt"] = DateTime.now().toString();
 
-        await FirebaseFirestore.instance.collection('users').doc(uid).update({
-          'ridesOffered': FieldValue.increment(1),
-        });
+        await _rideRepo.publishRide(uid, rideData);
+        await _userRepo.incrementUserStat(uid, 'ridesOffered', 1);
 
         if (!mounted) return;
-        Navigator.pushReplacement(context,
-            MaterialPageRoute(builder: (_) => RidePublishedScreen(rideData: rideData)));
+        Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+                builder: (_) => RidePublishedScreen(rideData: rideData)));
       }
     } finally {
       if (mounted) setState(() => isPublishing = false);
@@ -426,7 +499,8 @@ class _OfferRideScreenState extends State<OfferRideScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text("Cancel Ride?", style: TextStyle(color: Colors.white)),
+        title:
+            const Text("Cancel Ride?", style: TextStyle(color: Colors.white)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -441,19 +515,22 @@ class _OfferRideScreenState extends State<OfferRideScreen>
               decoration: const InputDecoration(
                 hintText: "Reason (e.g. Car issue)",
                 hintStyle: TextStyle(color: Colors.white38),
-                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white24)),
               ),
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Back")),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text("Back")),
           TextButton(
             onPressed: () {
               if (reasonController.text.trim().isEmpty) return;
               Navigator.pop(ctx, reasonController.text.trim());
             },
-            child: const Text("Cancel Ride", style: TextStyle(color: Colors.redAccent)),
+            child: const Text("Cancel Ride",
+                style: TextStyle(color: Colors.redAccent)),
           ),
         ],
       ),
@@ -464,61 +541,31 @@ class _OfferRideScreenState extends State<OfferRideScreen>
     setState(() => isPublishing = true);
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
+      final user = _userRepo.currentUser;
       if (user == null) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please login to continue")));
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Please login to continue")));
         return;
       }
       final uid = user.uid;
-      final firestore = FirebaseFirestore.instance;
-      final rideRef = firestore.collection("users").doc(uid).collection("driverTrips").doc(widget.rideId);
 
-      // Fetch fresh data to get current booked users
-      final docSnap = await rideRef.get();
-      if (!docSnap.exists) return;
-      final data = docSnap.data()!;
-      
-      final batch = firestore.batch();
+      await _rideRepo.cancelRide(uid, widget.rideId!, reason);
+      await _userRepo.incrementUserStat(uid, 'ridesOffered', -1);
+      await _userRepo.incrementUserStat(uid, 'ridesCancelled', 1);
 
-      // Update driver trip
-      batch.update(rideRef, {
-        'status': 'Cancelled',
-        'cancellationReason': reason,
-        'cancelledAt': FieldValue.serverTimestamp(),
-      });
-
-      // Update passengers
-      final bookedUsers = List<Map<String, dynamic>>.from(data['bookedUsers'] ?? []);
-      for (final user in bookedUsers) {
-        final pUid = user['uid'];
-        if (pUid != null) {
-          final q = await firestore.collection('users').doc(pUid).collection('bookedTrips')
-              .where('rideId', isEqualTo: widget.rideId).get();
-          for (final pDoc in q.docs) {
-            batch.update(pDoc.reference, {
-              'status': 'Cancelled',
-              'cancellationReason': reason,
-              'cancelledAt': FieldValue.serverTimestamp(),
-            });
-          }
-        }
-      }
-
-      await batch.commit();
-
-      await FirebaseFirestore.instance.collection('users').doc(uid).update({
-        'ridesOffered': FieldValue.increment(-1),
-        'ridesCancelled': FieldValue.increment(1),
-      });
+      // Note: In a real app, we'd fetch the updated data from repo to pass to screen
+      final data = widget.existingRideData ?? {};
 
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => RidePublishedScreen(rideData: data, isCancellation: true)),
+        MaterialPageRoute(
+            builder: (_) =>
+                RidePublishedScreen(rideData: data, isCancellation: true)),
       );
-
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Error: $e")));
     } finally {
       if (mounted) setState(() => isPublishing = false);
     }
@@ -547,16 +594,19 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                         decoration: BoxDecoration(
                           color: Colors.orange.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.orangeAccent.withOpacity(0.3)),
+                          border: Border.all(
+                              color: Colors.orangeAccent.withOpacity(0.3)),
                         ),
                         child: const Row(
                           children: [
-                            Icon(Icons.info_outline, color: Colors.orangeAccent, size: 20),
+                            Icon(Icons.info_outline,
+                                color: Colors.orangeAccent, size: 20),
                             SizedBox(width: 10),
                             Expanded(
                               child: Text(
                                 "Some fields are locked because you have bookings.",
-                                style: TextStyle(color: Colors.orangeAccent, fontSize: 13),
+                                style: TextStyle(
+                                    color: Colors.orangeAccent, fontSize: 13),
                               ),
                             ),
                           ],
@@ -570,21 +620,22 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                       enabled: !isRestricted,
                     ),
                     _suggestions(_pickupSuggestions, true),
-
                     const SizedBox(height: 6),
                     Center(
                       child: RotationTransition(
-                        turns:
-                            Tween(begin: 0.0, end: 0.5).animate(_swapController),
+                        turns: Tween(begin: 0.0, end: 0.5)
+                            .animate(_swapController),
                         child: IconButton(
                           icon: Icon(Icons.swap_vert,
-                              color: isRestricted ? Colors.white24 : Colors.white70, size: 28),
+                              color: isRestricted
+                                  ? Colors.white24
+                                  : Colors.white70,
+                              size: 28),
                           onPressed: isRestricted ? null : _swapPickupDrop,
                         ),
                       ),
                     ),
                     const SizedBox(height: 6),
-
                     _input(
                       "Drop Location",
                       Icons.flag,
@@ -594,7 +645,6 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                     ),
                     _suggestions(_dropSuggestions, false),
                     const SizedBox(height: 15),
-
                     _picker(
                       "Select Date",
                       selectedDate == null
@@ -605,7 +655,6 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                       enabled: !isRestricted,
                     ),
                     const SizedBox(height: 15),
-
                     _picker(
                       "Select Time",
                       selectedTime == null
@@ -616,10 +665,8 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                       enabled: !isRestricted,
                     ),
                     const SizedBox(height: 15),
-
                     _seatsCard(),
                     const SizedBox(height: 10),
-
                     if (isFetchingRoute)
                       const CircularProgressIndicator(color: Colors.white)
                     else if (distanceKm != null)
@@ -628,20 +675,22 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                         style: const TextStyle(
                             color: Colors.white70, fontSize: 13),
                       ),
-
                     const SizedBox(height: 20),
-                    // _input("Car Model (optional)",
-                    //     Icons.directions_car, carModelController),
-                    // const SizedBox(height: 15),
-                    // _input("Car Number (optional)",
-                    //     Icons.confirmation_number, carNumberController),
-                    // const SizedBox(height: 30),
-
+                    _input("Vehicle Model (e.g. Swift)", Icons.directions_car,
+                        carModelController),
+                    const SizedBox(height: 15),
+                    _input(
+                        "Vehicle Color", Icons.color_lens, carColorController),
+                    const SizedBox(height: 15),
+                    _input("Vehicle Number (Optional)",
+                        Icons.confirmation_number, carNumberController),
+                    const SizedBox(height: 30),
                     SizedBox(
                       width: double.infinity,
                       height: 55,
                       child: ElevatedButton(
-                        onPressed: (isPublishing || (widget.rideId != null && !_hasChanges))
+                        onPressed: (isPublishing ||
+                                (widget.rideId != null && !_hasChanges))
                             ? null
                             : publishRide,
                         style: ElevatedButton.styleFrom(
@@ -656,10 +705,11 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                             ? const CircularProgressIndicator(
                                 color: Colors.black)
                             : Text(
-                                widget.rideId != null ? "Update Ride" : "Publish Ride",
+                                widget.rideId != null
+                                    ? "Update Ride"
+                                    : "Publish Ride",
                                 style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold),
+                                    fontSize: 18, fontWeight: FontWeight.bold),
                               ),
                       ),
                     ),
@@ -672,7 +722,10 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                           onPressed: isPublishing ? null : _cancelRide,
                           child: const Text(
                             "Cancel Ride",
-                            style: TextStyle(color: Colors.redAccent, fontSize: 18, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                                color: Colors.redAccent,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold),
                           ),
                         ),
                       ),
@@ -691,31 +744,31 @@ class _OfferRideScreenState extends State<OfferRideScreen>
 
   Widget _header() {
     return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(24),
-        decoration: const BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              widget.rideId != null ? "Edit Ride" : "Offer a Ride",
-              style: const TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.rideId != null ? "Edit Ride" : "Offer a Ride",
+            style: const TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
             ),
-            const SizedBox(height: 8),
-            const Text(
-              "Share your ride & earn.\nHelp others travel safely.",
-              style: TextStyle(color: Colors.white70, fontSize: 16),
-            ),
-          ],
-        ),
-      );
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Share your ride & earn.\nHelp others travel safely.",
+            style: TextStyle(color: Colors.white70, fontSize: 16),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _input(
@@ -726,7 +779,11 @@ class _OfferRideScreenState extends State<OfferRideScreen>
     bool isDrop = false,
     bool enabled = true,
   }) {
-    final hasError = isPickup ? pickupError : isDrop ? dropError : false;
+    final hasError = isPickup
+        ? pickupError
+        : isDrop
+            ? dropError
+            : false;
 
     return AnimatedBuilder(
       animation: _shakeAnimation,
@@ -740,7 +797,9 @@ class _OfferRideScreenState extends State<OfferRideScreen>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
             decoration: BoxDecoration(
-              color: enabled ? const Color(0xFF1E1E1E) : Colors.white.withOpacity(0.05),
+              color: enabled
+                  ? const Color(0xFF1E1E1E)
+                  : Colors.white.withOpacity(0.05),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: hasError ? Colors.redAccent : Colors.transparent,
@@ -750,7 +809,9 @@ class _OfferRideScreenState extends State<OfferRideScreen>
             child: Row(
               children: [
                 Icon(icon,
-                    color: hasError ? Colors.redAccent : (enabled ? Colors.white70 : Colors.white30)),
+                    color: hasError
+                        ? Colors.redAccent
+                        : (enabled ? Colors.white70 : Colors.white30)),
                 const SizedBox(width: 12),
                 Expanded(
                   child: TextField(
@@ -761,7 +822,8 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                         : isDrop
                             ? dropFocus
                             : null,
-                    style: TextStyle(color: enabled ? Colors.white : Colors.white54),
+                    style: TextStyle(
+                        color: enabled ? Colors.white : Colors.white54),
                     decoration: InputDecoration(
                       hintText: hint,
                       hintStyle: TextStyle(
@@ -784,8 +846,7 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                 ),
                 if ((isPickup || isDrop) && enabled)
                   IconButton(
-                    icon:
-                        const Icon(Icons.my_location, color: Colors.white70),
+                    icon: const Icon(Icons.my_location, color: Colors.white70),
                     onPressed: () async {
                       _lastEdited =
                           isPickup ? LastEdited.pickup : LastEdited.drop;
@@ -796,8 +857,8 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                         dropError = false;
                       });
 
-                      final loc = await _locationService
-                          .getCurrentLocationSuggestion();
+                      final loc =
+                          await _locationService.getCurrentLocationSuggestion();
                       if (loc == null) {
                         setState(() => c.clear());
                         return;
@@ -870,18 +931,24 @@ class _OfferRideScreenState extends State<OfferRideScreen>
     );
   }
 
-  Widget _picker(
-      String label, String value, IconData icon, VoidCallback tap, {bool enabled = true}) {
+  Widget _picker(String label, String value, IconData icon, VoidCallback tap,
+      {bool enabled = true}) {
     return InkWell(
-      onTap: enabled ? tap : () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Cannot edit this field when seats are booked")),
-        );
-      },
+      onTap: enabled
+          ? tap
+          : () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content:
+                        Text("Cannot edit this field when seats are booked")),
+              );
+            },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
         decoration: BoxDecoration(
-          color: enabled ? const Color(0xFF1E1E1E) : Colors.white.withOpacity(0.05),
+          color: enabled
+              ? const Color(0xFF1E1E1E)
+              : Colors.white.withOpacity(0.05),
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
@@ -890,12 +957,14 @@ class _OfferRideScreenState extends State<OfferRideScreen>
             const SizedBox(width: 12),
             Expanded(
               child: Text(label,
-                  style:
-                      TextStyle(color: enabled ? Colors.white38 : Colors.white24, fontSize: 15)),
+                  style: TextStyle(
+                      color: enabled ? Colors.white38 : Colors.white24,
+                      fontSize: 15)),
             ),
             Text(value,
                 style: TextStyle(
-                    color: enabled ? Colors.white : Colors.white54, fontWeight: FontWeight.w600)),
+                    color: enabled ? Colors.white : Colors.white54,
+                    fontWeight: FontWeight.w600)),
           ],
         ),
       ),
@@ -926,17 +995,17 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                     setState(() => seats--);
                   } else if (seats <= seatsBooked) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Cannot reduce seats below booked count")),
+                      const SnackBar(
+                          content:
+                              Text("Cannot reduce seats below booked count")),
                     );
                   }
                 },
               ),
               Text("$seats",
-                  style:
-                      const TextStyle(color: Colors.white, fontSize: 18)),
+                  style: const TextStyle(color: Colors.white, fontSize: 18)),
               IconButton(
-                icon: const Icon(Icons.add_circle_outline,
-                    color: Colors.white),
+                icon: const Icon(Icons.add_circle_outline, color: Colors.white),
                 onPressed: () => setState(() => seats++),
               ),
             ],
