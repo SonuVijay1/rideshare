@@ -18,7 +18,9 @@ class _VehicleProfileScreenState extends State<VehicleProfileScreen> {
     uid = _userRepo.currentUser?.uid;
   }
 
-  void _openVehicleSheet(BuildContext context, [Map<String, dynamic>? d]) {
+  void _openVehicleSheet(
+      BuildContext context, List<Map<String, dynamic>> existingVehicles,
+      [Map<String, dynamic>? d]) {
     if (uid == null) return;
     final isEditing = d != null;
     final vm = TextEditingController(text: d?['vehicleModel'] ?? "");
@@ -166,6 +168,11 @@ class _VehicleProfileScreenState extends State<VehicleProfileScreen> {
                               } else if (!vReg.hasMatch(vNum)) {
                                 vnError = "Invalid format (e.g. MH12AB1234)";
                                 isValid = false;
+                              } else if (existingVehicles.any((e) =>
+                                  (e['vehicleNumber'] ?? '') == vNum &&
+                                  (!isEditing || e['id'] != d!['id']))) {
+                                vnError = "Vehicle number already exists";
+                                isValid = false;
                               }
 
                               setState(() {});
@@ -261,99 +268,103 @@ class _VehicleProfileScreenState extends State<VehicleProfileScreen> {
       );
     }
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF121212),
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        title: const Text("My Vehicles", style: TextStyle(color: Colors.white)),
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: StreamBuilder<List<Map<String, dynamic>>>(
-        stream: _userRepo.getUserVehicles(uid!),
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(
-                child: CircularProgressIndicator(color: Colors.white));
-          }
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _userRepo.getUserVehicles(uid!),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            backgroundColor: Color(0xFF121212),
+            body: Center(child: CircularProgressIndicator(color: Colors.white)),
+          );
+        }
 
-          final vehicles = snap.data ?? [];
+        final vehicles = snap.data ?? [];
 
-          if (vehicles.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.directions_car,
-                      size: 80, color: Colors.white24),
-                  const SizedBox(height: 20),
-                  const Text("No vehicles added yet",
-                      style: TextStyle(color: Colors.white54, fontSize: 16)),
-                  const SizedBox(height: 30),
-                  ElevatedButton(
-                    onPressed: () => _openVehicleSheet(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.black,
-                    ),
-                    child: const Text("Add Vehicle"),
-                  )
-                ],
-              ),
-            );
-          }
-
-          return ListView.separated(
-            padding: const EdgeInsets.all(20),
-            itemCount: vehicles.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 16),
-            itemBuilder: (context, index) {
-              final v = vehicles[index];
-              return Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E1E1E),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white10),
-                ),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.all(16),
-                  leading: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.black,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child:
-                        const Icon(Icons.directions_car, color: Colors.white),
-                  ),
-                  title: Text(v['vehicleModel'] ?? "Unknown Model",
-                      style: const TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.bold)),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+        return Scaffold(
+          backgroundColor: const Color(0xFF121212),
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            title: const Text("My Vehicles",
+                style: TextStyle(color: Colors.white)),
+            iconTheme: const IconThemeData(color: Colors.white),
+          ),
+          body: vehicles.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const SizedBox(height: 4),
-                      Text("${v['vehicleColor']} • ${v['vehicleType']}",
-                          style: const TextStyle(color: Colors.white70)),
-                      Text(v['vehicleNumber'] ?? "",
-                          style: const TextStyle(color: Colors.white54)),
+                      const Icon(Icons.directions_car,
+                          size: 80, color: Colors.white24),
+                      const SizedBox(height: 20),
+                      const Text("No vehicles added yet",
+                          style:
+                              TextStyle(color: Colors.white54, fontSize: 16)),
+                      const SizedBox(height: 30),
+                      ElevatedButton(
+                        onPressed: () => _openVehicleSheet(context, vehicles),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                        ),
+                        child: const Text("Add Vehicle"),
+                      )
                     ],
                   ),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.edit, color: Colors.white70),
-                    onPressed: () => _openVehicleSheet(context, v),
-                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.all(20),
+                  itemCount: vehicles.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 16),
+                  itemBuilder: (context, index) {
+                    final v = vehicles[index];
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E1E1E),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white10),
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.all(16),
+                        leading: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.black,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.directions_car,
+                              color: Colors.white),
+                        ),
+                        title: Text(v['vehicleModel'] ?? "Unknown Model",
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold)),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 4),
+                            Text("${v['vehicleColor']} • ${v['vehicleType']}",
+                                style: const TextStyle(color: Colors.white70)),
+                            Text(v['vehicleNumber'] ?? "",
+                                style: const TextStyle(color: Colors.white54)),
+                          ],
+                        ),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.edit, color: Colors.white70),
+                          onPressed: () =>
+                              _openVehicleSheet(context, vehicles, v),
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _openVehicleSheet(context),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        child: const Icon(Icons.add),
-      ),
+          floatingActionButton: FloatingActionButton(
+            onPressed: () => _openVehicleSheet(context, vehicles),
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black,
+            child: const Icon(Icons.add),
+          ),
+        );
+      },
     );
   }
 }

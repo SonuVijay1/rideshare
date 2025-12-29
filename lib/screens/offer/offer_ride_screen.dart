@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:intl/intl.dart';
 
 import 'package:rideshareApp/services/autocomplete_service.dart';
@@ -52,6 +53,7 @@ class _OfferRideScreenState extends State<OfferRideScreen>
   // seats
   int seats = 1;
   int seatsBooked = 0;
+  int _maxSeats = 4;
 
   // coords
   double? pickupLat, pickupLng, dropLat, dropLng;
@@ -81,6 +83,10 @@ class _OfferRideScreenState extends State<OfferRideScreen>
   int? _initialSeats;
   String _selectedVehicleType = "Car";
 
+  StreamSubscription<List<Map<String, dynamic>>>? _vehicleSub;
+  List<Map<String, dynamic>> _vehicles = [];
+  String? _selectedVehicleId;
+
   final RideRepository _rideRepo = FirebaseRideRepository();
   final UserRepository _userRepo = FirebaseUserRepository();
 
@@ -108,71 +114,86 @@ class _OfferRideScreenState extends State<OfferRideScreen>
     if (widget.existingRideData != null) {
       _prefillData();
     } else {
-      _checkVehicleDetails();
+      // _checkVehicleDetails(); // Replaced by stream listener
     }
+    _setupVehicleStream();
   }
 
-  Future<void> _checkVehicleDetails() async {
+  void _setupVehicleStream() {
     final user = _userRepo.currentUser;
     if (user == null) return;
 
-    final userData = await _userRepo.getUser(user.uid);
-    if (userData == null) return;
-
-    final vModel = userData['vehicleModel'];
-    final vNumber = userData['vehicleNumber'];
-    final vType = userData['vehicleType'] ?? "Car";
-    final vColor = userData['vehicleColor'] ?? "";
-
-    if (vModel == null ||
-        vModel.toString().trim().isEmpty ||
-        vNumber == null ||
-        vNumber.toString().trim().isEmpty) {
+    _vehicleSub = _userRepo.getUserVehicles(user.uid).listen((vehicles) {
       if (!mounted) return;
-      await showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF1E1E1E),
-          title: const Text("Vehicle Details Missing",
-              style: TextStyle(color: Colors.white)),
-          content: const Text(
-            "Please add your vehicle model and number in the Account section before offering a ride.",
-            style: TextStyle(color: Colors.white70),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                Navigator.pop(context);
-              },
-              child:
-                  const Text("OK", style: TextStyle(color: Colors.blueAccent)),
-            ),
-          ],
-        ),
-      );
-    } else {
-      if (mounted) {
-        setState(() {
-          carModelController.text = vModel;
-          carNumberController.text = vNumber;
-          carColorController.text = vColor;
-          _selectedVehicleType = vType;
+      setState(() {
+        _vehicles = vehicles;
+      });
 
-          // Auto-detect seats based on vehicle type
-          if (vType == "Bike") {
-            seats = 1;
-          } else if (vType == "Car") {
-            seats = 4;
-          } else if (vType == "SUV") {
-            seats = 6;
-          } else if (vType == "Bus") {
-            seats = 30;
-          }
-        });
+      if (vehicles.isEmpty) {
+        _showNoVehiclesDialog();
+      } else {
+        // If creating new ride and no vehicle selected, select first
+        if (widget.existingRideData == null && _selectedVehicleId == null) {
+          _selectVehicle(vehicles.first);
+        }
+        // If editing, try to match existing vehicle number to set dropdown ID
+        if (widget.existingRideData != null && _selectedVehicleId == null) {
+          final num = widget.existingRideData!['vehicleNumber'];
+          try {
+            final match = vehicles.firstWhere((v) => v['vehicleNumber'] == num);
+            setState(() {
+              _selectedVehicleId = match['id'];
+            });
+          } catch (_) {}
+        }
       }
-    }
+    });
+  }
+
+  void _selectVehicle(Map<String, dynamic> v) {
+    setState(() {
+      _selectedVehicleId = v['id'];
+      carModelController.text = v['vehicleModel'] ?? '';
+      carNumberController.text = v['vehicleNumber'] ?? '';
+      carColorController.text = v['vehicleColor'] ?? '';
+      _selectedVehicleType = v['vehicleType'] ?? 'Car';
+
+      _maxSeats = _calculateMaxSeats(_selectedVehicleType);
+      seats = _maxSeats;
+    });
+  }
+
+  int _calculateMaxSeats(String type) {
+    if (type == "Bike") return 1;
+    if (type == "Car") return 4;
+    if (type == "SUV") return 6;
+    if (type == "Bus") return 30;
+    return 4;
+  }
+
+  Future<void> _showNoVehiclesDialog() async {
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text("No Vehicles Found",
+            style: TextStyle(color: Colors.white)),
+        content: const Text(
+          "Please add a vehicle in your Account section before offering a ride.",
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.pop(context);
+            },
+            child: const Text("OK", style: TextStyle(color: Colors.blueAccent)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _prefillData() {
@@ -212,6 +233,7 @@ class _OfferRideScreenState extends State<OfferRideScreen>
     carNumberController.text = data['vehicleNumber'] ?? '';
     carColorController.text = data['vehicleColor'] ?? '';
     _selectedVehicleType = data['vehicleType'] ?? 'Car';
+    _maxSeats = _calculateMaxSeats(_selectedVehicleType);
 
     // Capture initial state
     _initialPickup = pickupController.text;
@@ -227,6 +249,7 @@ class _OfferRideScreenState extends State<OfferRideScreen>
 
   @override
   void dispose() {
+    _vehicleSub?.cancel();
     _shakeController.dispose();
     _swapController.dispose();
     pickupFocus.dispose();
@@ -676,62 +699,98 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                             color: Colors.white70, fontSize: 13),
                       ),
                     const SizedBox(height: 20),
-                    _input("Vehicle Model (e.g. Swift)", Icons.directions_car,
-                        carModelController),
-                    const SizedBox(height: 15),
-                    _input(
-                        "Vehicle Color", Icons.color_lens, carColorController),
-                    const SizedBox(height: 15),
-                    _input("Vehicle Number (Optional)",
-                        Icons.confirmation_number, carNumberController),
-                    const SizedBox(height: 30),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 55,
-                      child: ElevatedButton(
-                        onPressed: (isPublishing ||
-                                (widget.rideId != null && !_hasChanges))
-                            ? null
-                            : publishRide,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.black,
-                          disabledBackgroundColor: Colors.white24,
-                          disabledForegroundColor: Colors.white38,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14)),
+                    if (_vehicles.isNotEmpty) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E1E1E),
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                        child: isPublishing
-                            ? const CircularProgressIndicator(
-                                color: Colors.black)
-                            : Text(
-                                widget.rideId != null
-                                    ? "Update Ride"
-                                    : "Publish Ride",
-                                style: const TextStyle(
-                                    fontSize: 18, fontWeight: FontWeight.bold),
-                              ),
-                      ),
-                    ),
-                    if (widget.rideId != null) ...[
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 55,
-                        child: TextButton(
-                          onPressed: isPublishing ? null : _cancelRide,
-                          child: const Text(
-                            "Cancel Ride",
-                            style: TextStyle(
-                                color: Colors.redAccent,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: (_selectedVehicleId != null &&
+                                    _vehicles.any(
+                                        (v) => v['id'] == _selectedVehicleId))
+                                ? _selectedVehicleId
+                                : null,
+                            hint: const Text("Select Vehicle",
+                                style: TextStyle(color: Colors.white54)),
+                            dropdownColor: const Color(0xFF1E1E1E),
+                            isExpanded: true,
+                            icon: const Icon(Icons.keyboard_arrow_down,
+                                color: Colors.white70),
+                            style: const TextStyle(color: Colors.white),
+                            items: _vehicles.map((v) {
+                              return DropdownMenuItem<String>(
+                                value: v['id'],
+                                child: Text(
+                                    "${v['vehicleModel']} (${v['vehicleNumber']})"),
+                              );
+                            }).toList(),
+                            onChanged: (val) {
+                              if (val == null) return;
+                              final v =
+                                  _vehicles.firstWhere((e) => e['id'] == val);
+                              _selectVehicle(v);
+                            },
                           ),
                         ),
                       ),
+                      const SizedBox(height: 15),
                     ],
                   ],
                 ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    height: 55,
+                    child: ElevatedButton(
+                      onPressed: (isPublishing ||
+                              (widget.rideId != null && !_hasChanges))
+                          ? null
+                          : publishRide,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black,
+                        disabledBackgroundColor: Colors.white24,
+                        disabledForegroundColor: Colors.white38,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: isPublishing
+                          ? const CircularProgressIndicator(color: Colors.black)
+                          : Text(
+                              widget.rideId != null
+                                  ? "Update Ride"
+                                  : "Publish Ride",
+                              style: const TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold),
+                            ),
+                    ),
+                  ),
+                  if (widget.rideId != null) ...[
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 55,
+                      child: TextButton(
+                        onPressed: isPublishing ? null : _cancelRide,
+                        child: const Text(
+                          "Cancel Ride",
+                          style: TextStyle(
+                              color: Colors.redAccent,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ],
@@ -1005,8 +1064,10 @@ class _OfferRideScreenState extends State<OfferRideScreen>
               Text("$seats",
                   style: const TextStyle(color: Colors.white, fontSize: 18)),
               IconButton(
-                icon: const Icon(Icons.add_circle_outline, color: Colors.white),
-                onPressed: () => setState(() => seats++),
+                icon: Icon(Icons.add_circle_outline,
+                    color: seats < _maxSeats ? Colors.white : Colors.white24),
+                onPressed:
+                    seats < _maxSeats ? () => setState(() => seats++) : null,
               ),
             ],
           ),
