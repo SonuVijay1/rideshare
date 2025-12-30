@@ -739,13 +739,20 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                         fontSize: 16,
                         fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
-                Row(
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 4,
                   children: [
-                    const Icon(Icons.star, color: Colors.amber, size: 14),
-                    Text(" $rating ($ridesOffered rides)",
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 12)),
-                    const SizedBox(width: 10),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.star, color: Colors.amber, size: 14),
+                        Text(" $rating ($ridesOffered rides)",
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 12)),
+                      ],
+                    ),
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 6, vertical: 2),

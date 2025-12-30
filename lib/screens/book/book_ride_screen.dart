@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'package:intl/intl.dart';
 
-import '../../services/autocomplete_service.dart';
 import '../../services/location_service.dart';
 import '../../screens/avlbl/available_rides_screen.dart';
 import '../../utils/geo_utils.dart';
 import '../../repositories/ride_repository.dart';
+import 'location_search_screen.dart';
 
 class BookRideScreen extends StatefulWidget {
   const BookRideScreen({super.key});
@@ -22,21 +23,13 @@ class _BookRideScreenState extends State<BookRideScreen>
   final fromController = TextEditingController();
   final toController = TextEditingController();
   final dateController = TextEditingController();
-  final seatsController = TextEditingController(text: "1");
-
-  // focus
-  final fromFocus = FocusNode();
-  final toFocus = FocusNode();
+  DateTime? selectedDate;
+  int seats = 1;
 
   // error flags
   bool fromError = false;
   bool toError = false;
 
-  // last edited
-  LastEdited? _lastEdited;
-
-  // services
-  final AutocompleteService _autocompleteService = AutocompleteService();
   final LocationService _locationService = LocationService();
 
   // coords
@@ -47,10 +40,6 @@ class _BookRideScreenState extends State<BookRideScreen>
   String? durationStr;
   bool isFetchingRoute = false;
   bool isSearching = false;
-
-  // suggestions
-  List<Map<String, dynamic>> _fromSuggestions = [];
-  List<Map<String, dynamic>> _toSuggestions = [];
 
   // animation
   late final AnimationController _shakeController;
@@ -78,8 +67,6 @@ class _BookRideScreenState extends State<BookRideScreen>
   @override
   void dispose() {
     _shakeController.dispose();
-    fromFocus.dispose();
-    toFocus.dispose();
     super.dispose();
   }
 
@@ -87,7 +74,7 @@ class _BookRideScreenState extends State<BookRideScreen>
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
+      initialDate: selectedDate ?? DateTime.now(),
       firstDate: DateTime.now(),
       lastDate: DateTime(2030),
       builder: (_, child) => Theme(
@@ -103,46 +90,47 @@ class _BookRideScreenState extends State<BookRideScreen>
     );
 
     if (picked != null) {
-      dateController.text = DateFormat("yyyy-MM-dd").format(picked);
+      _setDate(picked);
     }
   }
 
-  /* ---------------- AUTOCOMPLETE ---------------- */
-  Future<void> _onLocationChanged(String value, bool isFrom) async {
-    _lastEdited = isFrom ? LastEdited.from : LastEdited.to;
-
-    if (value.trim().length < 3) {
-      setState(() {
-        isFrom ? _fromSuggestions = [] : _toSuggestions = [];
-      });
-      return;
-    }
-
-    final res = await _autocompleteService.getSuggestions(value.trim());
+  void _setDate(DateTime date) {
     setState(() {
-      isFrom ? _fromSuggestions = res : _toSuggestions = res;
-    });
-  }
+      selectedDate = date;
 
-  Future<void> _onSuggestionSelected(
-      Map<String, dynamic> s, bool isFrom) async {
-    _lastEdited = isFrom ? LastEdited.from : LastEdited.to;
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final tomorrow = today.add(const Duration(days: 1));
+      final checkDate = DateTime(date.year, date.month, date.day);
 
-    setState(() {
-      if (isFrom) {
-        fromController.text = s["title"];
-        fromLat = s["lat"];
-        fromLng = s["lng"];
-        _fromSuggestions = [];
+      if (checkDate == today) {
+        dateController.text = "Today";
+      } else if (checkDate == tomorrow) {
+        dateController.text = "Tomorrow";
       } else {
-        toController.text = s["title"];
-        toLat = s["lat"];
-        toLng = s["lng"];
-        _toSuggestions = [];
+        final day = date.day;
+        String suffix = 'th';
+        if (day >= 11 && day <= 13) {
+          suffix = 'th';
+        } else {
+          switch (day % 10) {
+            case 1:
+              suffix = 'st';
+              break;
+            case 2:
+              suffix = 'nd';
+              break;
+            case 3:
+              suffix = 'rd';
+              break;
+            default:
+              suffix = 'th';
+          }
+        }
+        dateController.text =
+            "$day$suffix ${DateFormat("MMM yyyy").format(date)}";
       }
     });
-
-    await _computeRoute();
   }
 
   /* ---------------- ROUTE ---------------- */
@@ -159,19 +147,12 @@ class _BookRideScreenState extends State<BookRideScreen>
         fromError = false;
         toError = false;
 
-        if (_lastEdited == LastEdited.from) {
-          fromError = true;
-          fromController.clear();
-          fromLat = null;
-          fromLng = null;
-          FocusScope.of(context).requestFocus(fromFocus);
-        } else {
-          toError = true;
-          toController.clear();
-          toLat = null;
-          toLng = null;
-          FocusScope.of(context).requestFocus(toFocus);
-        }
+        // Just shake the whole card, don't clear inputs immediately
+        // to let user see why it failed
+        fromError = true;
+        toError = true;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Pickup and drop cannot be the same")));
       });
 
       _shakeController.forward(from: 0);
@@ -274,172 +255,13 @@ class _BookRideScreenState extends State<BookRideScreen>
         MaterialPageRoute(
           builder: (_) => AvailableRidesScreen(
             rides: matchedRides,
-            requiredSeats: int.tryParse(seatsController.text) ?? 1,
+            requiredSeats: seats,
           ),
         ),
       );
     } finally {
       if (mounted) setState(() => isSearching = false);
     }
-  }
-
-  /* ---------------- INPUT CARD ---------------- */
-  Widget _inputCard({
-    required String hint,
-    required IconData icon,
-    required TextEditingController controller,
-    bool enableAutocomplete = false,
-    bool isFrom = false,
-    bool readOnly = false,
-    VoidCallback? onTap,
-  }) {
-    final hasError = enableAutocomplete && (isFrom ? fromError : toError);
-
-    return AnimatedBuilder(
-      animation: _shakeAnimation,
-      builder: (_, child) => Transform.translate(
-        offset: Offset(hasError ? _shakeAnimation.value : 0, 0),
-        child: child,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E1E1E),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: hasError ? Colors.redAccent : Colors.transparent,
-                width: 1.5,
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(icon, color: hasError ? Colors.redAccent : Colors.white70),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    focusNode: enableAutocomplete
-                        ? (isFrom ? fromFocus : toFocus)
-                        : null,
-                    readOnly: readOnly,
-                    onTap: onTap,
-                    onChanged: enableAutocomplete
-                        ? (v) {
-                            fromError = false;
-                            toError = false;
-                            _onLocationChanged(v, isFrom);
-                          }
-                        : null,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: hint,
-                      hintStyle: const TextStyle(color: Colors.white54),
-                      border: InputBorder.none,
-                    ),
-                  ),
-                ),
-                if (enableAutocomplete)
-                  IconButton(
-                    icon: const Icon(Icons.my_location, color: Colors.white70),
-                    onPressed: () async {
-                      _lastEdited = isFrom ? LastEdited.from : LastEdited.to;
-
-                      controller.text = "Fetching current location…";
-                      fromError = false;
-                      toError = false;
-
-                      final loc =
-                          await _locationService.getCurrentLocationSuggestion();
-                      if (loc == null) {
-                        controller.clear();
-                        return;
-                      }
-
-                      setState(() {
-                        controller.text = loc["title"];
-                        if (isFrom) {
-                          fromLat = loc["lat"];
-                          fromLng = loc["lng"];
-                          _fromSuggestions = [];
-                        } else {
-                          toLat = loc["lat"];
-                          toLng = loc["lng"];
-                          _toSuggestions = [];
-                        }
-                      });
-
-                      await _computeRoute();
-                    },
-                  ),
-              ],
-            ),
-          ),
-          if (hasError)
-            const Padding(
-              padding: EdgeInsets.only(left: 12, top: 6),
-              child: Text(
-                "Pickup and drop locations must be different",
-                style: TextStyle(
-                  color: Colors.redAccent,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _suggestions(List<Map<String, dynamic>> list, bool isFrom) {
-    if (list.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      children: list.map((e) {
-        return GestureDetector(
-          onTap: () => _onSuggestionSelected(e, isFrom),
-          child: Container(
-            margin: const EdgeInsets.only(top: 8),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E1E1E),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.place, color: Colors.white70, size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        e["title"] ?? "",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        e["subtitle"] ?? "",
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white60,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }).toList(),
-    );
   }
 
   void _swapLocations() {
@@ -462,101 +284,316 @@ class _BookRideScreenState extends State<BookRideScreen>
       // reset errors
       fromError = false;
       toError = false;
-
-      // clear suggestions
-      _fromSuggestions.clear();
-      _toSuggestions.clear();
     });
 
     _computeRoute();
+  }
+
+  Future<void> _openSearch(bool isFrom) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationSearchScreen(
+          hintText: isFrom ? "Where from?" : "Where to?",
+        ),
+      ),
+    );
+
+    if (result != null && result is Map<String, dynamic>) {
+      setState(() {
+        if (isFrom) {
+          fromController.text = result['title'];
+          fromLat = result['lat'];
+          fromLng = result['lng'];
+        } else {
+          toController.text = result['title'];
+          toLat = result['lat'];
+          toLng = result['lng'];
+        }
+      });
+      _computeRoute();
+    }
   }
 
   /* ---------------- UI ---------------- */
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _header(),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  children: [
-                    _inputCard(
-                      hint: "Pickup location",
-                      icon: Icons.location_on,
-                      controller: fromController,
-                      enableAutocomplete: true,
-                      isFrom: true,
-                    ),
-                    _suggestions(_fromSuggestions, true),
-                    const SizedBox(height: 6),
-                    Center(
-                      child: IconButton(
-                        icon: const Icon(Icons.swap_vert,
-                            color: Colors.white70, size: 28),
-                        onPressed: _swapLocations,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    _inputCard(
-                      hint: "Drop location",
-                      icon: Icons.flag,
-                      controller: toController,
-                      enableAutocomplete: true,
-                    ),
-                    _suggestions(_toSuggestions, false),
-                    const SizedBox(height: 15),
-                    _inputCard(
-                      hint: "Select date",
-                      icon: Icons.calendar_today,
-                      controller: dateController,
-                      readOnly: true,
-                      onTap: _pickDate,
-                    ),
-                    const SizedBox(height: 15),
-                    _inputCard(
-                      hint: "Seats required",
-                      icon: Icons.chair_alt,
-                      controller: seatsController,
-                    ),
-                    const SizedBox(height: 10),
-                    if (isFetchingRoute)
-                      const CircularProgressIndicator(color: Colors.white)
-                    else if (distanceKm != null)
-                      Text(
-                        "Approx: $durationStr • ${distanceKm!.round()} km",
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 13),
-                      ),
-                    const SizedBox(height: 30),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 55,
-                      child: ElevatedButton(
-                        onPressed: isSearching ? null : _searchRides,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.black,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14)),
+      extendBodyBehindAppBar: true,
+      resizeToAvoidBottomInset: false, // Prevents background from jumping
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          // 1. Background Gradient
+          Positioned.fill(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF1A1F25), // Deep Blue-Grey
+                    Color(0xFF000000), // Black
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // 3. Content
+          SafeArea(
+            child: Column(
+              children: [
+                _header(),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      children: [
+                        _buildLocationCard(),
+                        const SizedBox(height: 20),
+                        Row(
+                          children: [
+                            Expanded(child: _buildDateSelector()),
+                            const SizedBox(width: 12),
+                            Expanded(child: _buildSeatSelector()),
+                          ],
                         ),
-                        child: isSearching
-                            ? const CircularProgressIndicator(
-                                color: Colors.black)
-                            : const Text(
-                                "Search Rides",
-                                style: TextStyle(
-                                    fontSize: 18, fontWeight: FontWeight.bold),
-                              ),
+                        const SizedBox(height: 20),
+                        if (isFetchingRoute)
+                          const CircularProgressIndicator(color: Colors.white)
+                        else if (distanceKm != null)
+                          _glassContainer(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.directions_car,
+                                    color: Colors.white70, size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  "Approx: $durationStr • ${distanceKm!.round()} km",
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 14),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 55,
+                    child: ElevatedButton(
+                      onPressed: isSearching ? null : _searchRides,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black,
+                        disabledBackgroundColor: Colors.white24,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                        elevation: 0,
                       ),
+                      child: isSearching
+                          ? const CircularProgressIndicator(color: Colors.black)
+                          : const Text(
+                              "Search Rides",
+                              style: TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold),
+                            ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _header() => Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: _glassContainer(
+          padding: const EdgeInsets.all(24),
+          borderRadius: 24,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Text(
+                    "Book a Ride",
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Spacer(),
+                  Icon(Icons.map_outlined, color: Colors.white30, size: 32),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                "Find nearby rides easily.\nTravel comfortably.",
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+  Widget _buildLocationCard() {
+    return _glassContainer(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        children: [
+          _buildLocationField(
+            "From",
+            fromController,
+            Icons.my_location,
+            true,
+            fromError,
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Row(
+              children: [
+                Container(
+                  height: 20,
+                  width: 20,
+                ),
+                // Dashed line or solid line connector
+                Expanded(
+                  child: Container(
+                    height: 1,
+                    color: Colors.white10,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.swap_vert,
+                      color: Colors.white54, size: 20),
+                  onPressed: _swapLocations,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                Expanded(
+                  child: Container(
+                    height: 1,
+                    color: Colors.white10,
+                  ),
+                ),
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                ),
+              ],
+            ),
+          ),
+          _buildLocationField(
+            "To",
+            toController,
+            Icons.location_on,
+            false,
+            toError,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLocationField(String hint, TextEditingController controller,
+      IconData icon, bool isFrom, bool hasError) {
+    return AnimatedBuilder(
+      animation: _shakeAnimation,
+      builder: (_, child) => Transform.translate(
+        offset: Offset(hasError ? _shakeAnimation.value : 0, 0),
+        child: child,
+      ),
+      child: InkWell(
+        onTap: () => _openSearch(isFrom),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(icon,
+                  color: hasError ? Colors.redAccent : Colors.white70,
+                  size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      hint.toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      controller.text.isEmpty
+                          ? "Select Location"
+                          : controller.text,
+                      style: TextStyle(
+                        color: controller.text.isEmpty
+                            ? Colors.white24
+                            : Colors.white,
+                        fontSize: 16,
+                        fontWeight: controller.text.isEmpty
+                            ? FontWeight.normal
+                            : FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
+              const Icon(Icons.arrow_forward_ios,
+                  color: Colors.white12, size: 14),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDateSelector() {
+    final hasDate = dateController.text.isNotEmpty;
+    return GestureDetector(
+      onTap: _pickDate,
+      child: _glassContainer(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("Date",
+                style: TextStyle(color: Colors.white54, fontSize: 12)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.calendar_today, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    hasDate ? dateController.text : "Select",
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -564,33 +601,74 @@ class _BookRideScreenState extends State<BookRideScreen>
     );
   }
 
-  Widget _header() => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(24),
-        decoration: const BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
-        ),
-        child: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "Book a Ride",
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+  Widget _buildSeatSelector() {
+    return _glassContainer(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("Passengers",
+              style: TextStyle(color: Colors.white54, fontSize: 12)),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              InkWell(
+                onTap: () {
+                  if (seats > 1) setState(() => seats--);
+                },
+                child: const Padding(
+                  padding: EdgeInsets.all(4.0),
+                  child: Icon(Icons.remove, color: Colors.white70, size: 20),
+                ),
+              ),
+              Text("$seats",
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16)),
+              InkWell(
+                onTap: () {
+                  if (seats < 8) setState(() => seats++);
+                },
+                child: const Padding(
+                  padding: EdgeInsets.all(4.0),
+                  child: Icon(Icons.add, color: Colors.white70, size: 20),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _glassContainer({
+    required Widget child,
+    EdgeInsetsGeometry? padding,
+    EdgeInsetsGeometry? margin,
+    double borderRadius = 16,
+  }) {
+    return Container(
+      margin: margin,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            padding: padding,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(borderRadius),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.1),
+                width: 1,
               ),
             ),
-            SizedBox(height: 8),
-            Text(
-              "Find nearby rides easily",
-              style: TextStyle(
-                color: Colors.white70,
-                fontSize: 16,
-              ),
-            ),
-          ],
+            child: child,
+          ),
         ),
-      );
+      ),
+    );
+  }
 }

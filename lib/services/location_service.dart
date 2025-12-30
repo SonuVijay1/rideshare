@@ -4,7 +4,8 @@ import 'package:geolocator/geolocator.dart';
 
 class LocationService {
   final String openCageKey = "f7f4fe2e62e9480caff5882960ab697f";
-  final String orsKey = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjBmODliMmE0MGFhNjQ1ZDc5Mjg0ZmU5ZTUxNWEyZjFiIiwiaCI6Im11cm11cjY0In0=";
+  final String orsKey =
+      "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjBmODliMmE0MGFhNjQ1ZDc5Mjg0ZmU5ZTUxNWEyZjFiIiwiaCI6Im11cm11cjY0In0=";
 
   /* ---------------- CURRENT POSITION ---------------- */
   Future<Position?> getCurrentPosition() async {
@@ -21,13 +22,12 @@ class LocationService {
 
     return Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10),
+      timeLimit: const Duration(seconds: 10),
     );
   }
 
   /* ---------------- REVERSE GEOCODING ---------------- */
-  Future<Map<String, dynamic>?> reverseGeocode(
-      double lat, double lng) async {
+  Future<Map<String, dynamic>?> reverseGeocode(double lat, double lng) async {
     final url =
         "https://api.opencagedata.com/geocode/v1/json?q=$lat+$lng&key=$openCageKey";
 
@@ -49,8 +49,7 @@ class LocationService {
     final pos = await getCurrentPosition();
     if (pos == null) return null;
 
-    final address =
-        await reverseGeocode(pos.latitude, pos.longitude);
+    final address = await reverseGeocode(pos.latitude, pos.longitude);
 
     return {
       "type": "current",
@@ -95,6 +94,7 @@ class LocationService {
       "duration": _formatDuration(
         (summary["duration"] as num).toDouble(),
       ),
+      "geometry": data["routes"][0]["geometry"],
     };
   }
 

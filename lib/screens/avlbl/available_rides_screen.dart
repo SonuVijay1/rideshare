@@ -83,6 +83,7 @@ class _RideTile extends StatelessWidget {
 
         final seatsAvailable = data['seatsAvailable'] ?? 0;
         final isAvailable = seatsAvailable >= requiredSeats;
+        final bookingMode = data['bookingMode'] ?? 'instant';
 
         return InkWell(
           onTap: isAvailable
@@ -160,6 +161,13 @@ class _RideTile extends StatelessWidget {
                                 fontWeight: FontWeight.w500),
                           ),
                         ],
+                      ),
+                      Icon(
+                        bookingMode == 'instant'
+                            ? Icons.flash_on
+                            : Icons.person_add,
+                        color: Colors.white38,
+                        size: 16,
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(

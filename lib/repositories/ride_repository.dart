@@ -244,7 +244,11 @@ class FirebaseRideRepository implements RideRepository {
         final bookingData = Map<String, dynamic>.from(rideData);
         bookingData['seatsBooked'] = seats;
         bookingData['passengerId'] = userId; // New schema field
-        bookingData['status'] = 'Upcoming';
+
+        // Check booking mode
+        final mode = rideData['bookingMode'] ?? 'instant';
+        bookingData['status'] = mode == 'instant' ? 'Confirmed' : 'Pending';
+
         bookingData['bookedAt'] = FieldValue.serverTimestamp();
         bookingData['driverId'] = driverId;
         bookingData['rideId'] = rideId;
