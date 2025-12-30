@@ -1,5 +1,6 @@
 // lib/repositories/ride_repository.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'user_repository.dart';
 
 abstract class RideRepository {
   Future<void> publishRide(String uid, Map<String, dynamic> rideData,
@@ -32,10 +33,26 @@ abstract class RideRepository {
     required String bookingId,
     required int seatsBooked,
   });
+  Future<void> submitReview({
+    required String rideId,
+    required String reviewerId,
+    required String revieweeId,
+    required double rating,
+    required String comment,
+    required bool isDriverReviewing,
+  });
+  Stream<List<Map<String, dynamic>>> getMessages(String rideId);
+  Future<void> sendMessage(
+      String rideId, String message, String senderId, String senderName);
+  Future<void> setTypingStatus(
+      String rideId, String userId, String userName, bool isTyping);
+  Stream<List<String>> getTypingUsers(String rideId, String excludeUserId);
 }
 
 class FirebaseRideRepository implements RideRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  // We use the concrete implementation here to access the rateUser method
+  final FirebaseUserRepository _userRepo = FirebaseUserRepository();
 
   @override
   Future<void> publishRide(String uid, Map<String, dynamic> rideData,
@@ -80,10 +97,31 @@ class FirebaseRideRepository implements RideRepository {
             'cancellationReason': reason,
             'cancelledAt': FieldValue.serverTimestamp(),
           });
+          // Notify Passenger
+          _sendNotification(
+            pUid,
+            "Ride Cancelled",
+            "The ride you booked has been cancelled by the driver.",
+            "cancellation",
+            rideId,
+          );
         }
       }
     }
     await batch.commit();
+  }
+
+  Future<void> _sendNotification(String userId, String title, String body,
+      String type, String referenceId) async {
+    await _firestore.collection('notifications').add({
+      'userId': userId,
+      'title': title,
+      'body': body,
+      'type': type,
+      'referenceId': referenceId,
+      'isRead': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 
   @override
@@ -254,6 +292,14 @@ class FirebaseRideRepository implements RideRepository {
         bookingData['rideId'] = rideId;
         transaction.set(myBookingRef, bookingData);
       }
+    }).then((_) {
+      // Send notification to driver
+      _sendNotification(
+          driverId,
+          "New Booking",
+          "$userName has booked $seats seat(s) on your ride.",
+          "booking",
+          rideId);
     });
   }
 
@@ -285,6 +331,115 @@ class FirebaseRideRepository implements RideRepository {
         });
       }
       transaction.delete(userBookingRef);
+    });
+
+    // Notify Driver
+    _sendNotification(driverId, "Booking Cancelled",
+        "A passenger has cancelled their booking.", "cancellation", rideId);
+  }
+
+  @override
+  Future<void> submitReview({
+    required String rideId,
+    required String reviewerId,
+    required String revieweeId,
+    required double rating,
+    required String comment,
+    required bool isDriverReviewing,
+  }) async {
+    // 1. Add Review Document
+    await _firestore.collection('reviews').add({
+      'rideId': rideId,
+      'reviewerId': reviewerId,
+      'revieweeId': revieweeId,
+      'rating': rating,
+      'comment': comment,
+      'role': isDriverReviewing ? 'driver' : 'passenger',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    // 2. Update User Rating
+    // If driver is reviewing, they are rating a passenger (asDriver=false for the target)
+    // If passenger is reviewing, they are rating a driver (asDriver=true for the target)
+    await _userRepo.rateUser(revieweeId, rating, !isDriverReviewing);
+  }
+
+  @override
+  Stream<List<Map<String, dynamic>>> getMessages(String rideId) {
+    return _firestore
+        .collection('rides')
+        .doc(rideId)
+        .collection('messages')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((query) => query.docs.map((doc) => doc.data()).toList());
+  }
+
+  @override
+  Future<void> sendMessage(
+      String rideId, String message, String senderId, String senderName) async {
+    // 1. Add to subcollection
+    await _firestore
+        .collection('rides')
+        .doc(rideId)
+        .collection('messages')
+        .add({
+      'text': message,
+      'senderId': senderId,
+      'senderName': senderName,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    // 2. Update metadata for list views (Ride & Bookings)
+    final updateData = {
+      'lastMessage': message,
+      'lastMessageTime': FieldValue.serverTimestamp(),
+    };
+
+    // Update Ride (for Driver)
+    await _firestore.collection('rides').doc(rideId).update(updateData);
+
+    // Update Bookings (for Passengers)
+    final bookings = await _firestore
+        .collection('rideBookings')
+        .where('rideId', isEqualTo: rideId)
+        .get();
+
+    final batch = _firestore.batch();
+    for (final doc in bookings.docs) {
+      batch.update(doc.reference, updateData);
+    }
+    await batch.commit();
+  }
+
+  @override
+  Future<void> setTypingStatus(
+      String rideId, String userId, String userName, bool isTyping) async {
+    await _firestore
+        .collection('rides')
+        .doc(rideId)
+        .collection('typing')
+        .doc(userId)
+        .set({
+      'isTyping': isTyping,
+      'name': userName,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  @override
+  Stream<List<String>> getTypingUsers(String rideId, String excludeUserId) {
+    return _firestore
+        .collection('rides')
+        .doc(rideId)
+        .collection('typing')
+        .where('isTyping', isEqualTo: true)
+        .snapshots()
+        .map((snap) {
+      return snap.docs
+          .where((doc) => doc.id != excludeUserId)
+          .map((doc) => doc.data()['name'] as String? ?? 'Someone')
+          .toList();
     });
   }
 }

@@ -1,7 +1,9 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../book/ride_details_screen.dart';
 import '../../repositories/ride_repository.dart';
+import '../../utils/custom_route.dart';
 
 class AvailableRidesScreen extends StatelessWidget {
   final List<Map<String, dynamic>> rides;
@@ -16,33 +18,52 @@ class AvailableRidesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+      extendBodyBehindAppBar: true,
+      backgroundColor: Colors.black,
       appBar: AppBar(
-        backgroundColor: Colors.black,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         title: const Text("Available Rides",
             style: TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: rides.isEmpty
-          ? const Center(
-              child: Text("No rides found matching your criteria",
-                  style: TextStyle(color: Colors.white54)))
-          : ListView.separated(
-              padding: const EdgeInsets.all(20),
-              itemCount: rides.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 16),
-              itemBuilder: (context, index) {
-                final doc = rides[index];
-
-                return _RideTile(
-                  initialData: doc,
-                  requiredSeats: requiredSeats,
-                  rideId: doc['rideId'],
-                  driverId: doc['driverId'],
-                );
-              },
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF1A1F25), Color(0xFF000000)],
+                ),
+              ),
             ),
+          ),
+          SafeArea(
+            child: rides.isEmpty
+                ? const Center(
+                    child: Text("No rides found matching your criteria",
+                        style: TextStyle(color: Colors.white54)))
+                : ListView.separated(
+                    padding: const EdgeInsets.all(20),
+                    itemCount: rides.length,
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 16),
+                    itemBuilder: (context, index) {
+                      final doc = rides[index];
+
+                      return _RideTile(
+                        initialData: doc,
+                        requiredSeats: requiredSeats,
+                        rideId: doc['rideId'],
+                        driverId: doc['driverId'],
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -90,8 +111,8 @@ class _RideTile extends StatelessWidget {
               ? () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => RideDetailsScreen(
+                    CustomPageRoute(
+                      child: RideDetailsScreen(
                         rideData: data,
                         rideId: rideId,
                         driverId: driverId,
@@ -110,13 +131,8 @@ class _RideTile extends StatelessWidget {
                 },
           child: Opacity(
             opacity: isAvailable ? 1.0 : 0.5,
-            child: Container(
+            child: _glassContainer(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E1E1E),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white10),
-              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -245,6 +261,24 @@ class _RideTile extends StatelessWidget {
           style: const TextStyle(color: Colors.white70, fontSize: 13),
         ),
       ],
+    );
+  }
+
+  Widget _glassContainer({required Widget child, EdgeInsetsGeometry? padding}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withOpacity(0.1)),
+          ),
+          child: child,
+        ),
+      ),
     );
   }
 }

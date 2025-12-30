@@ -7,6 +7,7 @@ import '../../screens/avlbl/available_rides_screen.dart';
 import '../../utils/geo_utils.dart';
 import '../../repositories/ride_repository.dart';
 import 'location_search_screen.dart';
+import '../../utils/custom_route.dart';
 
 class BookRideScreen extends StatefulWidget {
   const BookRideScreen({super.key});
@@ -252,8 +253,8 @@ class _BookRideScreenState extends State<BookRideScreen>
 
       Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => AvailableRidesScreen(
+        CustomPageRoute(
+          child: AvailableRidesScreen(
             rides: matchedRides,
             requiredSeats: seats,
           ),
@@ -292,8 +293,8 @@ class _BookRideScreenState extends State<BookRideScreen>
   Future<void> _openSearch(bool isFrom) async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => LocationSearchScreen(
+      CustomPageRoute(
+        child: LocationSearchScreen(
           hintText: isFrom ? "Where from?" : "Where to?",
         ),
       ),

@@ -1,9 +1,11 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:rideshareApp/screens/offer/offer_ride_screen.dart';
 import 'package:rideshareApp/screens/book/ride_details_screen.dart';
 import '../../repositories/ride_repository.dart';
 import '../../repositories/user_repository.dart';
+import '../../utils/custom_route.dart';
 
 class TripHistoryScreen extends StatelessWidget {
   TripHistoryScreen({super.key});
@@ -11,13 +13,27 @@ class TripHistoryScreen extends StatelessWidget {
   final RideRepository _rideRepo = FirebaseRideRepository();
   final UserRepository _userRepo = FirebaseUserRepository();
 
+  Widget _buildGradientBackground() {
+    return Positioned.fill(
+      child: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF1A1F25), Color(0xFF000000)],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = _userRepo.currentUser;
 
     if (user == null) {
       return const Scaffold(
-        backgroundColor: Color(0xFF121212),
+        backgroundColor: Colors.black,
         body: Center(
           child: Text("Please login to view your trips",
               style: TextStyle(color: Colors.white70, fontSize: 16)),
@@ -34,9 +50,11 @@ class TripHistoryScreen extends StatelessWidget {
           builder: (context, bookedSnap) {
             if (driverSnap.hasError || bookedSnap.hasError) {
               return Scaffold(
-                backgroundColor: const Color(0xFF121212),
+                extendBodyBehindAppBar: true,
+                backgroundColor: Colors.black,
                 appBar: AppBar(
-                  backgroundColor: Colors.black,
+                  backgroundColor: Colors.transparent,
+                  elevation: 0,
                   title: const Text("My Trips",
                       style: TextStyle(color: Colors.white)),
                 ),
@@ -53,9 +71,10 @@ class TripHistoryScreen extends StatelessWidget {
             if (driverSnap.connectionState == ConnectionState.waiting ||
                 bookedSnap.connectionState == ConnectionState.waiting) {
               return const Scaffold(
-                backgroundColor: Color(0xFF121212),
+                backgroundColor: Colors.black,
                 body: Center(
-                    child: CircularProgressIndicator(color: Colors.white)),
+                  child: CircularProgressIndicator(color: Colors.white),
+                ),
               );
             }
 
@@ -68,9 +87,10 @@ class TripHistoryScreen extends StatelessWidget {
               return DefaultTabController(
                 length: 2,
                 child: Scaffold(
-                  backgroundColor: const Color(0xFF121212),
+                  extendBodyBehindAppBar: true,
+                  backgroundColor: Colors.black,
                   appBar: AppBar(
-                    backgroundColor: Colors.black,
+                    backgroundColor: Colors.transparent,
                     elevation: 0,
                     title: const Text(
                       "My Trips",
@@ -88,19 +108,27 @@ class TripHistoryScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  body: TabBarView(
+                  body: Stack(
                     children: [
-                      _TripsList(trips: driverTrips, isOffered: true),
-                      _TripsList(trips: bookedTrips, isOffered: false),
+                      _buildGradientBackground(),
+                      SafeArea(
+                        child: TabBarView(
+                          children: [
+                            _TripsList(trips: driverTrips, isOffered: true),
+                            _TripsList(trips: bookedTrips, isOffered: false),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
               );
             } else if (hasOffered) {
               return Scaffold(
-                backgroundColor: const Color(0xFF121212),
+                extendBodyBehindAppBar: true,
+                backgroundColor: Colors.black,
                 appBar: AppBar(
-                  backgroundColor: Colors.black,
+                  backgroundColor: Colors.transparent,
                   elevation: 0,
                   centerTitle: true,
                   title: const Text(
@@ -109,13 +137,20 @@ class TripHistoryScreen extends StatelessWidget {
                         color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                 ),
-                body: _TripsList(trips: driverTrips, isOffered: true),
+                body: Stack(
+                  children: [
+                    _buildGradientBackground(),
+                    SafeArea(
+                        child: _TripsList(trips: driverTrips, isOffered: true)),
+                  ],
+                ),
               );
             } else if (hasBooked) {
               return Scaffold(
-                backgroundColor: const Color(0xFF121212),
+                extendBodyBehindAppBar: true,
+                backgroundColor: Colors.black,
                 appBar: AppBar(
-                  backgroundColor: Colors.black,
+                  backgroundColor: Colors.transparent,
                   elevation: 0,
                   centerTitle: true,
                   title: const Text(
@@ -124,13 +159,21 @@ class TripHistoryScreen extends StatelessWidget {
                         color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                 ),
-                body: _TripsList(trips: bookedTrips, isOffered: false),
+                body: Stack(
+                  children: [
+                    _buildGradientBackground(),
+                    SafeArea(
+                        child:
+                            _TripsList(trips: bookedTrips, isOffered: false)),
+                  ],
+                ),
               );
             } else {
               return Scaffold(
-                backgroundColor: const Color(0xFF121212),
+                extendBodyBehindAppBar: true,
+                backgroundColor: Colors.black,
                 appBar: AppBar(
-                  backgroundColor: Colors.black,
+                  backgroundColor: Colors.transparent,
                   elevation: 0,
                   title: const Text(
                     "My Trips",
@@ -138,11 +181,16 @@ class TripHistoryScreen extends StatelessWidget {
                         color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                 ),
-                body: const Center(
-                  child: Text(
-                    "No Bookings or Offerings",
-                    style: TextStyle(color: Colors.white54, fontSize: 16),
-                  ),
+                body: Stack(
+                  children: [
+                    _buildGradientBackground(),
+                    const Center(
+                      child: Text(
+                        "No Bookings or Offerings",
+                        style: TextStyle(color: Colors.white54, fontSize: 16),
+                      ),
+                    ),
+                  ],
                 ),
               );
             }
@@ -311,14 +359,8 @@ class _TripCard extends StatelessWidget {
       }
     } catch (_) {}
 
-    return Container(
+    return _glassContainer(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(16),
-        border:
-            Border.all(color: isCompleted ? Colors.white10 : Colors.white24),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -365,8 +407,8 @@ class _TripCard extends StatelessWidget {
                         onTap: () {
                           Navigator.push(
                             context,
-                            MaterialPageRoute(
-                              builder: (_) => OfferRideScreen(
+                            CustomPageRoute(
+                              child: OfferRideScreen(
                                   existingRideData: data, rideId: rideId),
                             ),
                           );
@@ -385,15 +427,14 @@ class _TripCard extends StatelessWidget {
                           if (driverId != null && rId != null) {
                             Navigator.push(
                                 context,
-                                MaterialPageRoute(
-                                    builder: (_) => RideDetailsScreen(
-                                          rideData: data,
-                                          rideId: rId,
-                                          driverId: driverId,
-                                          bookingId: rideId,
-                                          existingBookedSeats:
-                                              data['seatsBooked'] ?? 0,
-                                        )));
+                                CustomPageRoute(
+                                    child: RideDetailsScreen(
+                                  rideData: data,
+                                  rideId: rId,
+                                  driverId: driverId,
+                                  bookingId: rideId,
+                                  existingBookedSeats: data['seatsBooked'] ?? 0,
+                                )));
                           }
                         },
                         child: const Icon(Icons.edit,
@@ -561,6 +602,24 @@ class _TripCard extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _glassContainer({required Widget child, EdgeInsetsGeometry? padding}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withOpacity(0.1)),
+          ),
+          child: child,
+        ),
+      ),
     );
   }
 }

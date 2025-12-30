@@ -1,8 +1,11 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'offer_ride_options_screen.dart';
+import '../../utils/custom_route.dart';
 
-class OfferRideMapScreen extends StatelessWidget {
+class OfferRideMapScreen extends StatefulWidget {
   final Map<String, dynamic>? existingRideData;
   final String? rideId;
 
@@ -53,21 +56,59 @@ class OfferRideMapScreen extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    String pathParam = "";
-    if (routeGeometry != null) {
-      // Check length to prevent URL overflow (LocationIQ limit ~8192 chars)
-      // If route is too long (e.g. > 500km), geometry string might exceed limit.
-      // We fallback to markers only if geometry is too large to ensure map loads.
-      if (routeGeometry!.length < 7500) {
-        pathParam =
-            "&path=weight:5|color:0x3b82f6|enc:${Uri.encodeComponent(routeGeometry!)}";
-      }
-    }
+  State<OfferRideMapScreen> createState() => _OfferRideMapScreenState();
+}
 
-    // LocationIQ Static Map URL
-    final mapUrl =
-        "https://maps.locationiq.com/v3/staticmap?key=pk.b47010d748ec9c1e2ee4fb9dce51f322&markers=icon:large-green-cutout|$fromLat,$fromLng&markers=icon:large-red-cutout|$toLat,$toLng$pathParam&size=600x800";
+class _OfferRideMapScreenState extends State<OfferRideMapScreen> {
+  List<LatLng> _routePoints = [];
+  final MapController _mapController = MapController();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.routeGeometry != null) {
+      _routePoints = _decodePolyline(widget.routeGeometry!);
+    }
+  }
+
+  // Decodes Google Polyline Algorithm string
+  List<LatLng> _decodePolyline(String encoded) {
+    List<LatLng> points = [];
+    int index = 0, len = encoded.length;
+    int lat = 0, lng = 0;
+
+    while (index < len) {
+      int b, shift = 0, result = 0;
+      do {
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      int dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+      do {
+        b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+      lng += dlng;
+
+      points.add(LatLng(lat / 1E5, lng / 1E5));
+    }
+    return points;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bounds = LatLngBounds.fromPoints([
+      LatLng(widget.fromLat, widget.fromLng),
+      LatLng(widget.toLat, widget.toLng),
+      ..._routePoints,
+    ]);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -75,20 +116,60 @@ class OfferRideMapScreen extends StatelessWidget {
         children: [
           // Map Background
           Positioned.fill(
-            child: Image.network(
-              mapUrl,
-              fit: BoxFit.cover,
-              loadingBuilder: (ctx, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return const Center(
-                    child: CircularProgressIndicator(color: Colors.white));
-              },
-              errorBuilder: (ctx, error, stackTrace) => Container(
-                color: const Color(0xFF1A1F25),
-                child: const Center(
-                    child: Icon(Icons.map_outlined,
-                        color: Colors.white24, size: 64)),
+            child: FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCameraFit: CameraFit.bounds(
+                  bounds: bounds,
+                  padding: const EdgeInsets.only(
+                    top: 100, // Clear the top header
+                    bottom: 300, // Clear the bottom info card & button
+                    left: 40,
+                    right: 40,
+                  ),
+                ),
+                interactionOptions: const InteractionOptions(
+                  flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                ),
               ),
+              children: [
+                TileLayer(
+                  // CartoDB Dark Matter for dark theme consistency
+                  urlTemplate:
+                      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+                  subdomains: const ['a', 'b', 'c', 'd'],
+                  userAgentPackageName: 'com.rideshare.app',
+                  retinaMode: RetinaMode.isHighDensity(context),
+                ),
+                if (_routePoints.isNotEmpty)
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: _routePoints,
+                        strokeWidth: 4.0,
+                        color: Colors.blueAccent,
+                      ),
+                    ],
+                  ),
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: LatLng(widget.fromLat, widget.fromLng),
+                      width: 30,
+                      height: 30,
+                      child: const Icon(Icons.my_location,
+                          color: Colors.greenAccent, size: 30),
+                    ),
+                    Marker(
+                      point: LatLng(widget.toLat, widget.toLng),
+                      width: 30,
+                      height: 30,
+                      child: const Icon(Icons.location_on,
+                          color: Colors.redAccent, size: 30),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
           // Gradient Overlay for readability
@@ -132,6 +213,31 @@ class OfferRideMapScreen extends StatelessWidget {
                 ),
                 const Spacer(),
                 Padding(
+                  padding: const EdgeInsets.only(right: 20, bottom: 10),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: FloatingActionButton(
+                      mini: true,
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black,
+                      child: const Icon(Icons.center_focus_strong),
+                      onPressed: () {
+                        _mapController.fitCamera(
+                          CameraFit.bounds(
+                            bounds: bounds,
+                            padding: const EdgeInsets.only(
+                              top: 100,
+                              bottom: 300,
+                              left: 40,
+                              right: 40,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                Padding(
                   padding: const EdgeInsets.all(20),
                   child: Column(
                     children: [
@@ -141,10 +247,10 @@ class OfferRideMapScreen extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
                             _infoItem(Icons.directions_car,
-                                "${distanceKm.round()} km"),
+                                "${widget.distanceKm.round()} km"),
                             Container(
                                 width: 1, height: 20, color: Colors.white24),
-                            _infoItem(Icons.timer, durationStr),
+                            _infoItem(Icons.timer, widget.durationStr),
                           ],
                         ),
                       ),
@@ -156,29 +262,30 @@ class OfferRideMapScreen extends StatelessWidget {
                           onPressed: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(
-                                builder: (_) => OfferRideOptionsScreen(
-                                  existingRideData: existingRideData,
-                                  rideId: rideId,
-                                  from: from,
-                                  to: to,
-                                  fromLat: fromLat,
-                                  fromLng: fromLng,
-                                  toLat: toLat,
-                                  toLng: toLng,
-                                  distanceKm: distanceKm,
-                                  durationStr: durationStr,
-                                  routeGeometry: routeGeometry,
-                                  vehicleModel: vehicleModel,
-                                  vehicleNumber: vehicleNumber,
-                                  vehicleColor: vehicleColor,
-                                  vehicleType: vehicleType,
-                                  seatsBooked: seatsBooked,
-                                  selectedDate: selectedDate,
-                                  selectedTime: selectedTime,
-                                  seatsAvailable: seatsAvailable,
-                                  existingPrice: existingPrice,
-                                  existingBookingMode: existingBookingMode,
+                              CustomPageRoute(
+                                child: OfferRideOptionsScreen(
+                                  existingRideData: widget.existingRideData,
+                                  rideId: widget.rideId,
+                                  from: widget.from,
+                                  to: widget.to,
+                                  fromLat: widget.fromLat,
+                                  fromLng: widget.fromLng,
+                                  toLat: widget.toLat,
+                                  toLng: widget.toLng,
+                                  distanceKm: widget.distanceKm,
+                                  durationStr: widget.durationStr,
+                                  routeGeometry: widget.routeGeometry,
+                                  vehicleModel: widget.vehicleModel,
+                                  vehicleNumber: widget.vehicleNumber,
+                                  vehicleColor: widget.vehicleColor,
+                                  vehicleType: widget.vehicleType,
+                                  seatsBooked: widget.seatsBooked,
+                                  selectedDate: widget.selectedDate,
+                                  selectedTime: widget.selectedTime,
+                                  seatsAvailable: widget.seatsAvailable,
+                                  existingPrice: widget.existingPrice,
+                                  existingBookingMode:
+                                      widget.existingBookingMode,
                                 ),
                               ),
                             );

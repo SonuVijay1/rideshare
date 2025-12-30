@@ -30,6 +30,7 @@ abstract class UserRepository {
   Future<void> updateVehicle(
       String uid, String vehicleId, Map<String, dynamic> data);
   Future<void> deleteVehicle(String uid, String vehicleId);
+  Future<void> rateUser(String uid, double rating, bool asDriver);
 }
 
 class FirebaseUserRepository implements UserRepository {
@@ -191,5 +192,29 @@ class FirebaseUserRepository implements UserRepository {
         .collection('vehicles')
         .doc(vehicleId)
         .delete();
+  }
+
+  @override
+  Future<void> rateUser(String uid, double rating, bool asDriver) async {
+    final userRef = _firestore.collection('users').doc(uid);
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(userRef);
+      if (!snapshot.exists) return;
+
+      final data = snapshot.data()!;
+      final String ratingField = asDriver ? 'driverRating' : 'passengerRating';
+      final String countField =
+          asDriver ? 'driverRatingCount' : 'passengerRatingCount';
+
+      final double currentRating =
+          (data[ratingField] as num?)?.toDouble() ?? 0.0;
+      final int currentCount = (data[countField] as num?)?.toInt() ?? 0;
+
+      final double newRating =
+          ((currentRating * currentCount) + rating) / (currentCount + 1);
+
+      transaction.update(
+          userRef, {ratingField: newRating, countField: currentCount + 1});
+    });
   }
 }

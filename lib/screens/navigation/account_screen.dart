@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -8,6 +9,7 @@ import '../../repositories/user_repository.dart';
 import '../../repositories/storage_repository.dart';
 import '../profile/profile_screen.dart';
 import '../profile/vehicle_profile_screen.dart';
+import '../../utils/custom_route.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -186,305 +188,338 @@ class _AccountScreenState extends State<AccountScreen>
       );
     }
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
-      body: SafeArea(
-        child: StreamBuilder<Map<String, dynamic>?>(
-            stream: _userRepo.getUserStream(uid!),
-            builder: (context, snap) {
-              final data = snap.data ?? {};
+      extendBodyBehindAppBar: true,
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF1A1F25), Color(0xFF000000)],
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: StreamBuilder<Map<String, dynamic>?>(
+                stream: _userRepo.getUserStream(uid!),
+                builder: (context, snap) {
+                  final data = snap.data ?? {};
 
-              final name = data['name'] ?? "New User";
-              final authPhone = _userRepo.currentUser?.phoneNumber;
-              final phone = (authPhone != null && authPhone.isNotEmpty)
-                  ? authPhone
-                  : (data['phone'] ?? "Not Added");
+                  final name = data['name'] ?? "New User";
+                  final authPhone = _userRepo.currentUser?.phoneNumber;
+                  final phone = (authPhone != null && authPhone.isNotEmpty)
+                      ? authPhone
+                      : (data['phone'] ?? "Not Added");
 
-              final createdAt = data['createdAt'];
-              final joined = createdAt != null && createdAt is DateTime
-                  ? DateFormat("MMM yyyy").format(createdAt)
-                  : "Unknown";
+                  final createdAt = data['createdAt'];
+                  final joined = createdAt != null && createdAt is DateTime
+                      ? DateFormat("MMM yyyy").format(createdAt)
+                      : "Unknown";
 
-              final ridesTaken = (data['ridesTaken'] as num?)?.toInt() ?? 0;
-              final ridesOffered = (data['ridesOffered'] as num?)?.toInt() ?? 0;
-              final ridesCancelled =
-                  (data['ridesCancelled'] as num?)?.toInt() ?? 0;
-              final pRating =
-                  (data['passengerRating'] as num?)?.toDouble() ?? 0.0;
-              final dRating = (data['driverRating'] as num?)?.toDouble() ?? 0.0;
+                  final ridesTaken = (data['ridesTaken'] as num?)?.toInt() ?? 0;
+                  final ridesOffered =
+                      (data['ridesOffered'] as num?)?.toInt() ?? 0;
+                  final ridesCancelled =
+                      (data['ridesCancelled'] as num?)?.toInt() ?? 0;
+                  final pRating =
+                      (data['passengerRating'] as num?)?.toDouble() ?? 0.0;
+                  final dRating =
+                      (data['driverRating'] as num?)?.toDouble() ?? 0.0;
 
-              final pic = data['profilePic'];
-              final aadhaar = data['aadhaarUrl'];
-              final license = data['licenseUrl'];
-              final aadhaarVerified = data['aadhaarVerified'] == true;
-              final licenseVerified = data['licenseVerified'] == true;
+                  final pic = data['profilePic'];
+                  final aadhaar = data['aadhaarUrl'];
+                  final license = data['licenseUrl'];
+                  final aadhaarVerified = data['aadhaarVerified'] == true;
+                  final licenseVerified = data['licenseVerified'] == true;
 
-              final safeData = Map<String, dynamic>.from(data);
-              final verified = safeData['verified'] == true;
-              final completion = _profileCompletion(safeData);
+                  final safeData = Map<String, dynamic>.from(data);
+                  final verified = safeData['verified'] == true;
+                  final completion = _profileCompletion(safeData);
 
-              final cancelStatus = _calculateCancellationStatus(
-                  ridesTaken, ridesOffered, ridesCancelled);
+                  final cancelStatus = _calculateCancellationStatus(
+                      ridesTaken, ridesOffered, ridesCancelled);
 
-              return Column(
-                children: [
-                  // HEADER
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(24),
-                    decoration: const BoxDecoration(
-                      color: Colors.black,
-                      borderRadius:
-                          BorderRadius.vertical(bottom: Radius.circular(30)),
-                    ),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              "Account",
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 26,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                            const Spacer(),
-                            if (verified)
-                              const Icon(Icons.verified,
-                                  color: Colors.blueAccent),
-                          ],
+                  return Column(
+                    children: [
+                      // HEADER
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(24),
+                        decoration: const BoxDecoration(
+                          color: Colors.black,
+                          borderRadius: BorderRadius.vertical(
+                              bottom: Radius.circular(30)),
                         ),
-                        const SizedBox(height: 20),
-                        Row(
-                          children: [
-                            GestureDetector(
-                              onTap: () =>
-                                  _pickAndUpload("profilePic", "profile"),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                      color: Colors.blueAccent.withOpacity(0.8),
-                                      width: 2),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.blueAccent.withOpacity(0.4),
-                                      blurRadius: 12,
-                                      spreadRadius: 2,
-                                    ),
-                                  ],
-                                ),
-                                child: CircleAvatar(
-                                  radius: 35,
-                                  backgroundImage:
-                                      pic != null ? NetworkImage(pic) : null,
-                                  backgroundColor: Colors.deepPurple,
-                                  child: pic == null
-                                      ? Text(
-                                          name.isNotEmpty
-                                              ? name[0].toUpperCase()
-                                              : "?",
-                                          style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 26),
-                                        )
-                                      : null,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(name,
-                                    style: const TextStyle(
-                                        color: Colors.white, fontSize: 18)),
-                                Text(phone,
-                                    style:
-                                        const TextStyle(color: Colors.white54)),
-                                const SizedBox(height: 4),
-                                Text("Joined $joined",
-                                    style: const TextStyle(
-                                        color: Colors.white38, fontSize: 12)),
-                              ],
-                            ),
-                            const Spacer(),
-                            TextButton(
-                                onPressed: () => Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                          builder: (_) =>
-                                              const ProfileScreen()),
-                                    ),
-                                child: const Text("Edit",
-                                    style: TextStyle(color: Colors.white)))
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-                        Column(
+                        child: Column(
                           children: [
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Text("Profile Completion",
-                                    style: TextStyle(
-                                        color: Colors.white70, fontSize: 12)),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                      color: completion == 1.0
-                                          ? Colors.greenAccent.withOpacity(0.2)
-                                          : Colors.blueAccent.withOpacity(0.2),
-                                      borderRadius: BorderRadius.circular(8)),
-                                  child: Text("${(completion * 100).round()}%",
-                                      style: TextStyle(
-                                          color: completion == 1.0
-                                              ? Colors.greenAccent
-                                              : Colors.blueAccent,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12)),
+                                Text(
+                                  "Account",
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 26,
+                                      fontWeight: FontWeight.bold),
                                 ),
+                                const Spacer(),
+                                if (verified)
+                                  const Icon(Icons.verified,
+                                      color: Colors.blueAccent),
                               ],
                             ),
-                            const SizedBox(height: 10),
-                            TweenAnimationBuilder<double>(
-                              tween: Tween<double>(begin: 0, end: completion),
-                              duration: const Duration(milliseconds: 1000),
-                              curve: Curves.easeOutExpo,
-                              builder: (context, value, _) => Container(
-                                height: 10,
-                                width: double.infinity,
-                                decoration: BoxDecoration(
-                                  color: Colors.white10,
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: FractionallySizedBox(
-                                  alignment: Alignment.centerLeft,
-                                  widthFactor: value,
+                            const SizedBox(height: 20),
+                            Row(
+                              children: [
+                                GestureDetector(
+                                  onTap: () =>
+                                      _pickAndUpload("profilePic", "profile"),
                                   child: Container(
                                     decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(20),
-                                      gradient: LinearGradient(
-                                        colors: value == 1.0
-                                            ? [Colors.green, Colors.greenAccent]
-                                            : [
-                                                Colors.blue,
-                                                Colors.purpleAccent
-                                              ],
-                                      ),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                          color: Colors.blueAccent
+                                              .withOpacity(0.8),
+                                          width: 2),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: (value == 1.0
-                                                  ? Colors.greenAccent
-                                                  : Colors.blueAccent)
-                                              .withOpacity(0.5),
-                                          blurRadius: 6,
-                                          offset: const Offset(0, 2),
-                                        )
+                                          color: Colors.blueAccent
+                                              .withOpacity(0.4),
+                                          blurRadius: 12,
+                                          spreadRadius: 2,
+                                        ),
                                       ],
+                                    ),
+                                    child: CircleAvatar(
+                                      radius: 35,
+                                      backgroundImage: pic != null
+                                          ? NetworkImage(pic)
+                                          : null,
+                                      backgroundColor: Colors.deepPurple,
+                                      child: pic == null
+                                          ? Text(
+                                              name.isNotEmpty
+                                                  ? name[0].toUpperCase()
+                                                  : "?",
+                                              style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 26),
+                                            )
+                                          : null,
                                     ),
                                   ),
                                 ),
-                              ),
+                                const SizedBox(width: 16),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(name,
+                                        style: const TextStyle(
+                                            color: Colors.white, fontSize: 18)),
+                                    Text(phone,
+                                        style: const TextStyle(
+                                            color: Colors.white54)),
+                                    const SizedBox(height: 4),
+                                    Text("Joined $joined",
+                                        style: const TextStyle(
+                                            color: Colors.white38,
+                                            fontSize: 12)),
+                                  ],
+                                ),
+                                const Spacer(),
+                                TextButton(
+                                    onPressed: () => Navigator.push(
+                                          context,
+                                          CustomPageRoute(
+                                              child: const ProfileScreen()),
+                                        ),
+                                    child: const Text("Edit",
+                                        style: TextStyle(color: Colors.white)))
+                              ],
+                            ),
+                            const SizedBox(height: 24),
+                            Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text("Profile Completion",
+                                        style: TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 12)),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                          color: completion == 1.0
+                                              ? Colors.greenAccent
+                                                  .withOpacity(0.2)
+                                              : Colors.blueAccent
+                                                  .withOpacity(0.2),
+                                          borderRadius:
+                                              BorderRadius.circular(8)),
+                                      child: Text(
+                                          "${(completion * 100).round()}%",
+                                          style: TextStyle(
+                                              color: completion == 1.0
+                                                  ? Colors.greenAccent
+                                                  : Colors.blueAccent,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12)),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                TweenAnimationBuilder<double>(
+                                  tween:
+                                      Tween<double>(begin: 0, end: completion),
+                                  duration: const Duration(milliseconds: 1000),
+                                  curve: Curves.easeOutExpo,
+                                  builder: (context, value, _) => Container(
+                                    height: 10,
+                                    width: double.infinity,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white10,
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: FractionallySizedBox(
+                                      alignment: Alignment.centerLeft,
+                                      widthFactor: value,
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                          gradient: LinearGradient(
+                                            colors: value == 1.0
+                                                ? [
+                                                    Colors.green,
+                                                    Colors.greenAccent
+                                                  ]
+                                                : [
+                                                    Colors.blue,
+                                                    Colors.purpleAccent
+                                                  ],
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: (value == 1.0
+                                                      ? Colors.greenAccent
+                                                      : Colors.blueAccent)
+                                                  .withOpacity(0.5),
+                                              blurRadius: 6,
+                                              offset: const Offset(0, 2),
+                                            )
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
+                      ),
 
-                  Expanded(
-                    child: RefreshIndicator(
-                      onRefresh: _reloadUser,
-                      color: Colors.white,
-                      backgroundColor: Colors.black,
-                      child: SingleChildScrollView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.all(18),
-                          child: Column(
-                            children: [
-                              _statsCard(
-                                  ridesTaken,
-                                  ridesOffered,
-                                  ridesCancelled,
-                                  pRating,
-                                  dRating,
-                                  cancelStatus),
-                              const SizedBox(height: 20),
+                      Expanded(
+                        child: RefreshIndicator(
+                          onRefresh: _reloadUser,
+                          color: Colors.white,
+                          backgroundColor: Colors.black,
+                          child: SingleChildScrollView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.all(18),
+                              child: Column(
+                                children: [
+                                  _statsCard(
+                                      ridesTaken,
+                                      ridesOffered,
+                                      ridesCancelled,
+                                      pRating,
+                                      dRating,
+                                      cancelStatus),
+                                  const SizedBox(height: 20),
 
-                              // Personal Profile Link
-                              _tile("Personal Profile", "View & Edit",
-                                  onTap: () => Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                            builder: (_) =>
-                                                const ProfileScreen()),
-                                      )),
+                                  // Personal Profile Link
+                                  _tile("Personal Profile", "View & Edit",
+                                      onTap: () => Navigator.push(
+                                            context,
+                                            CustomPageRoute(
+                                                child: const ProfileScreen()),
+                                          )),
 
-                              const SizedBox(height: 20),
-                              section("Vehicle Details"),
-                              _tile("My Vehicles", "Manage",
-                                  onTap: () => Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                          builder: (_) =>
-                                              const VehicleProfileScreen()))),
+                                  const SizedBox(height: 20),
+                                  section("Vehicle Details"),
+                                  _tile("My Vehicles", "Manage",
+                                      onTap: () => Navigator.push(
+                                          context,
+                                          CustomPageRoute(
+                                              child:
+                                                  const VehicleProfileScreen()))),
 
-                              const SizedBox(height: 20),
+                                  const SizedBox(height: 20),
 
-                              // DOCUMENTS
-                              section("Identity Verification"),
-                              _docButton("Upload Aadhaar", aadhaar,
-                                  "aadhaarUrl", "aadhaar", aadhaarVerified),
-                              _docButton("Upload Driving License", license,
-                                  "licenseUrl", "license", licenseVerified),
+                                  // DOCUMENTS
+                                  section("Identity Verification"),
+                                  _docButton("Upload Aadhaar", aadhaar,
+                                      "aadhaarUrl", "aadhaar", aadhaarVerified),
+                                  _docButton("Upload Driving License", license,
+                                      "licenseUrl", "license", licenseVerified),
 
-                              const SizedBox(height: 20),
+                                  const SizedBox(height: 20),
 
-                              section("Emergency Contact"),
-                              _emergencyTile(safeData),
-                            ],
-                          )),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: _logoutButton(() async {
-                      final shouldLogout = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          backgroundColor: const Color(0xFF1E1E1E),
-                          title: const Text("Log Out",
-                              style: TextStyle(color: Colors.white)),
-                          content: const Text(
-                              "Are you sure you want to log out?",
-                              style: TextStyle(color: Colors.white70)),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text("Cancel"),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              child: const Text("Log Out",
-                                  style: TextStyle(color: Colors.redAccent)),
-                            ),
-                          ],
+                                  section("Emergency Contact"),
+                                  _emergencyTile(safeData),
+                                ],
+                              )),
                         ),
-                      );
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: _logoutButton(() async {
+                          final shouldLogout = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              backgroundColor: const Color(0xFF1E1E1E),
+                              title: const Text("Log Out",
+                                  style: TextStyle(color: Colors.white)),
+                              content: const Text(
+                                  "Are you sure you want to log out?",
+                                  style: TextStyle(color: Colors.white70)),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
+                                  child: const Text("Cancel"),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text("Log Out",
+                                      style:
+                                          TextStyle(color: Colors.redAccent)),
+                                ),
+                              ],
+                            ),
+                          );
 
-                      if (shouldLogout == true) {
-                        await _userRepo.signOut();
-                        if (context.mounted) {
-                          Navigator.pushNamedAndRemoveUntil(
-                              context, "/login", (route) => false);
-                        }
-                      }
-                    }),
-                  ),
-                ],
-              );
-            }),
+                          if (shouldLogout == true) {
+                            await _userRepo.signOut();
+                            if (context.mounted) {
+                              Navigator.pushNamedAndRemoveUntil(
+                                  context, "/login", (route) => false);
+                            }
+                          }
+                        }),
+                      ),
+                    ],
+                  );
+                }),
+          ),
+        ],
       ),
     );
   }
@@ -493,12 +528,9 @@ class _AccountScreenState extends State<AccountScreen>
 
   Widget _tile(String t, String v, {VoidCallback? onTap}) => GestureDetector(
         onTap: onTap,
-        child: Container(
+        child: _glassContainer(
           padding: const EdgeInsets.all(14),
           margin: const EdgeInsets.only(bottom: 8),
-          decoration: BoxDecoration(
-              color: const Color(0xFF1E1E1E),
-              borderRadius: BorderRadius.circular(12)),
           child: Row(
             children: [
               Text(t, style: const TextStyle(color: Colors.white54)),
@@ -532,12 +564,8 @@ class _AccountScreenState extends State<AccountScreen>
         Row(
           children: [
             Expanded(
-              child: Container(
+              child: _glassContainer(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E1E1E),
-                  borderRadius: BorderRadius.circular(16),
-                ),
                 child: Column(
                   children: [
                     const Row(
@@ -562,12 +590,8 @@ class _AccountScreenState extends State<AccountScreen>
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Container(
+              child: _glassContainer(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E1E1E),
-                  borderRadius: BorderRadius.circular(16),
-                ),
                 child: Column(
                   children: [
                     const Row(
@@ -594,12 +618,8 @@ class _AccountScreenState extends State<AccountScreen>
           ],
         ),
         const SizedBox(height: 12),
-        Container(
+        _glassContainer(
           padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E1E1E),
-            borderRadius: BorderRadius.circular(16),
-          ),
           child: Column(
             children: [
               const Row(
@@ -705,39 +725,40 @@ class _AccountScreenState extends State<AccountScreen>
 
   Widget _docButton(
       String title, String? url, String field, String folder, bool isVerified) {
-    return ListTile(
-      tileColor: const Color(0xFF1E1E1E),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      title: Text(title, style: const TextStyle(color: Colors.white)),
-      subtitle: Text(
-        url == null
-            ? "Not Uploaded"
-            : (isVerified ? "Verified" : "Pending Verification"),
-        style: TextStyle(
-            color: url == null
-                ? Colors.red
-                : (isVerified ? Colors.greenAccent : Colors.orangeAccent)),
+    return _glassContainer(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        title: Text(title, style: const TextStyle(color: Colors.white)),
+        subtitle: Text(
+          url == null
+              ? "Not Uploaded"
+              : (isVerified ? "Verified" : "Pending Verification"),
+          style: TextStyle(
+              color: url == null
+                  ? Colors.red
+                  : (isVerified ? Colors.greenAccent : Colors.orangeAccent)),
+        ),
+        trailing: isVerified
+            ? const Icon(Icons.verified, color: Colors.greenAccent)
+            : const Icon(Icons.upload, color: Colors.white),
+        onTap: () => _pickAndUpload(field, folder),
       ),
-      trailing: isVerified
-          ? const Icon(Icons.verified, color: Colors.greenAccent)
-          : const Icon(Icons.upload, color: Colors.white),
-      onTap: () => _pickAndUpload(field, folder),
     );
   }
 
   Widget _emergencyTile(Map<String, dynamic> d) {
-    return ListTile(
-      tileColor: const Color(0xFF1E1E1E),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      title: const Text("Emergency Contact",
-          style: TextStyle(color: Colors.white)),
-      subtitle: Text(
-          d['emergencyName'] == null
-              ? "Not Added"
-              : "${d['emergencyName']} (${d['emergencyPhone']})",
-          style: const TextStyle(color: Colors.white54)),
-      trailing: const Icon(Icons.phone, color: Colors.white),
-      onTap: () => _addEmergency(),
+    return _glassContainer(
+      child: ListTile(
+        title: const Text("Emergency Contact",
+            style: TextStyle(color: Colors.white)),
+        subtitle: Text(
+            d['emergencyName'] == null
+                ? "Not Added"
+                : "${d['emergencyName']} (${d['emergencyPhone']})",
+            style: const TextStyle(color: Colors.white54)),
+        trailing: const Icon(Icons.phone, color: Colors.white),
+        onTap: () => _addEmergency(),
+      ),
     );
   }
 
@@ -785,7 +806,7 @@ class _AccountScreenState extends State<AccountScreen>
             labelText: t,
             labelStyle: const TextStyle(color: Colors.white54),
             filled: true,
-            fillColor: Colors.black,
+            fillColor: Colors.white10,
             border:
                 OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
       );
@@ -805,4 +826,29 @@ class _AccountScreenState extends State<AccountScreen>
                       color: Colors.redAccent, fontWeight: FontWeight.bold)),
             )),
       );
+
+  Widget _glassContainer({
+    required Widget child,
+    EdgeInsetsGeometry? padding,
+    EdgeInsetsGeometry? margin,
+  }) {
+    return Container(
+      margin: margin,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            padding: padding,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withOpacity(0.1)),
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
 }

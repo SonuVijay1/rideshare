@@ -10,6 +10,7 @@ import '../../repositories/ride_repository.dart';
 import '../../repositories/user_repository.dart';
 
 import 'offer_ride_details_screen.dart';
+import '../../utils/custom_route.dart';
 
 enum LastEdited { pickup, drop }
 
@@ -282,8 +283,8 @@ class _OfferRideScreenState extends State<OfferRideScreen>
 
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => LocationSearchScreen(
+      CustomPageRoute(
+        child: LocationSearchScreen(
           hintText: isPickup ? "Where from?" : "Where to?",
         ),
       ),
@@ -318,8 +319,8 @@ class _OfferRideScreenState extends State<OfferRideScreen>
 
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => OfferRideDetailsScreen(
+      CustomPageRoute(
+        child: OfferRideDetailsScreen(
           existingRideData: widget.existingRideData,
           rideId: widget.rideId,
           from: pickupController.text.trim(),

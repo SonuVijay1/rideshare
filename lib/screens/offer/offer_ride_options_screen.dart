@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../repositories/ride_repository.dart';
 import '../../repositories/user_repository.dart';
 import 'ride_published_screen.dart';
+import '../../utils/custom_route.dart';
 
 class OfferRideOptionsScreen extends StatefulWidget {
   final Map<String, dynamic>? existingRideData;
@@ -147,9 +148,8 @@ class _OfferRideOptionsScreenState extends State<OfferRideOptionsScreen> {
         if (!mounted) return;
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(
-              builder: (_) =>
-                  RidePublishedScreen(rideData: rideData, isUpdate: true)),
+          CustomPageRoute(
+              child: RidePublishedScreen(rideData: rideData, isUpdate: true)),
           (route) => route.isFirst,
         );
       } else {
@@ -163,8 +163,7 @@ class _OfferRideOptionsScreenState extends State<OfferRideOptionsScreen> {
         if (!mounted) return;
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(
-              builder: (_) => RidePublishedScreen(rideData: rideData)),
+          CustomPageRoute(child: RidePublishedScreen(rideData: rideData)),
           (route) => route.isFirst,
         );
       }
@@ -213,8 +212,8 @@ class _OfferRideOptionsScreenState extends State<OfferRideOptionsScreen> {
         if (!mounted) return;
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(
-              builder: (_) => RidePublishedScreen(
+          CustomPageRoute(
+              child: RidePublishedScreen(
                   rideData: widget.existingRideData ?? {},
                   isCancellation: true)),
           (route) => route.isFirst,

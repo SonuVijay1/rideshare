@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../repositories/ride_repository.dart';
 import '../../repositories/user_repository.dart';
 import 'offer_ride_map_screen.dart';
+import '../../utils/custom_route.dart';
 
 class OfferRideDetailsScreen extends StatefulWidget {
   final Map<String, dynamic>? existingRideData;
@@ -152,8 +153,8 @@ class _OfferRideDetailsScreenState extends State<OfferRideDetailsScreen> {
 
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => OfferRideMapScreen(
+      CustomPageRoute(
+        child: OfferRideMapScreen(
           existingRideData: widget.existingRideData,
           rideId: widget.rideId,
           from: widget.from,

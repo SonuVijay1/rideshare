@@ -1,8 +1,12 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:rideshareApp/screens/offer/ride_published_screen.dart';
 import '../../repositories/ride_repository.dart';
 import '../../repositories/user_repository.dart';
+import '../reviews/rate_user_screen.dart';
+import '../chat/chat_screen.dart';
+import '../../utils/custom_route.dart';
 
 class RideDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> rideData;
@@ -174,8 +178,8 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
-            builder: (_) => RidePublishedScreen(
+        CustomPageRoute(
+            child: RidePublishedScreen(
                 rideData: widget.rideData,
                 isUpdate: isUpdate,
                 isBooking: true)),
@@ -238,8 +242,8 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
 
       Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(
-              builder: (_) => RidePublishedScreen(
+          CustomPageRoute(
+              child: RidePublishedScreen(
                   rideData: widget.rideData,
                   isBooking: true,
                   isCancellation: true)),
@@ -333,355 +337,425 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
           }
         } catch (_) {}
 
+        // Check if ride is completed
+        bool isCompleted = false;
+        try {
+          if (data['date'] != null) {
+            final date = DateFormat("yyyy-MM-dd").parse(data['date']);
+            final now = DateTime.now();
+            if (date.isBefore(DateTime(now.year, now.month, now.day)))
+              isCompleted = true;
+          }
+        } catch (_) {}
+
+        final canChat = uid != null &&
+            (uid == widget.driverId || bookedUsers.any((u) => u['uid'] == uid));
+
         return Scaffold(
-          backgroundColor: const Color(0xFF121212),
+          extendBodyBehindAppBar: true,
+          backgroundColor: Colors.black,
           appBar: AppBar(
-            backgroundColor: Colors.black,
+            backgroundColor: Colors.transparent,
+            elevation: 0,
             title: Text(
                 effectiveBookingId != null ? "Edit Booking" : "Ride Details",
                 style: const TextStyle(color: Colors.white)),
             iconTheme: const IconThemeData(color: Colors.white),
           ),
-          body: SafeArea(
-            child: Column(
-              children: [
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (isAlreadyBooked)
-                          Container(
-                            margin: const EdgeInsets.only(bottom: 20),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                  color: Colors.blueAccent.withOpacity(0.3)),
-                            ),
-                            child: const Row(
-                              children: [
-                                Icon(Icons.info_outline,
-                                    color: Colors.blueAccent, size: 20),
-                                SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    "You have already booked this ride.",
-                                    style: TextStyle(
-                                        color: Colors.blueAccent, fontSize: 13),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        if (effectiveBookingId != null)
-                          Container(
-                            margin: const EdgeInsets.only(bottom: 20),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                  color: Colors.blueAccent.withOpacity(0.3)),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.info_outline,
-                                    color: Colors.blueAccent, size: 20),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                      "You have booked this ride for ${effectiveBookedSeats ?? 0} seat(s).",
-                                      style: const TextStyle(
-                                          color: Colors.blueAccent,
-                                          fontSize: 13)),
-                                ),
-                              ],
-                            ),
-                          ),
-                        if (isFullyBooked && !isAlreadyBooked)
-                          Container(
-                            margin: const EdgeInsets.only(bottom: 20),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                  color: Colors.orangeAccent.withOpacity(0.3)),
-                            ),
-                            child: const Row(
-                              children: [
-                                Icon(Icons.warning_amber_rounded,
-                                    color: Colors.orangeAccent, size: 20),
-                                SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    "This ride is fully booked.",
-                                    style: TextStyle(
-                                        color: Colors.orangeAccent,
-                                        fontSize: 13),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        // Driver Info Card
-                        _driverCard(),
-                        const SizedBox(height: 20),
-
-                        // Ride Info
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1E1E1E),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.white10),
-                          ),
-                          child: Column(
-                            children: [
-                              _row(Icons.calendar_today,
-                                  _formatDate(data['date'])),
-                              const SizedBox(height: 12),
-                              _row(Icons.access_time, data['time'] ?? ''),
-                              const Divider(color: Colors.white10, height: 24),
-                              _locationRow(Icons.circle, Colors.green,
-                                  data['from'] ?? '', data['time'] ?? ''),
-                              Container(
-                                margin: const EdgeInsets.only(left: 11),
-                                height: 20,
-                                width: 2,
-                                color: Colors.white24,
-                              ),
-                              _locationRow(Icons.location_on, Colors.redAccent,
-                                  data['to'] ?? '', endTimeStr),
-                            ],
-                          ),
-                        ),
-
-                        if (data['vehicleModel'] != null &&
-                            (data['vehicleModel'] as String).isNotEmpty) ...[
-                          const SizedBox(height: 20),
-                          Container(
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1E1E1E),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: Colors.white10),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.directions_car,
-                                    color: Colors.white70),
-                                const SizedBox(width: 12),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                        "${data['vehicleModel']} (${data['vehicleType'] ?? 'Car'})",
-                                        style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold)),
-                                    if (data['vehicleColor'] != null)
-                                      Text(data['vehicleColor'],
-                                          style: const TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 13)),
-                                    if (data['vehicleNumber'] != null &&
-                                        (data['vehicleNumber'] as String)
-                                            .isNotEmpty)
-                                      Text(data['vehicleNumber'],
-                                          style: const TextStyle(
-                                              color: Colors.white54,
-                                              fontSize: 12)),
-                                  ],
-                                )
-                              ],
-                            ),
-                          ),
-                        ],
-
-                        const SizedBox(height: 20),
-
-                        // Seat Selection
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1E1E1E),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text("Select Seats",
-                                  style: TextStyle(color: Colors.white70)),
-                              const SizedBox(height: 10),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      IconButton(
-                                        icon: Icon(Icons.remove_circle_outline,
-                                            color: selectedSeats > 1
-                                                ? (canBook
-                                                    ? Colors.white
-                                                    : Colors.white24)
-                                                : Colors.white24),
-                                        onPressed: canBook && selectedSeats > 1
-                                            ? () =>
-                                                setState(() => selectedSeats--)
-                                            : null,
-                                      ),
-                                      Text("$selectedSeats",
-                                          style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 18)),
-                                      IconButton(
-                                        icon: Icon(Icons.add_circle_outline,
-                                            color: canBook &&
-                                                    selectedSeats <
-                                                        effectiveMaxSeats
-                                                ? (canBook
-                                                    ? Colors.white
-                                                    : Colors.white24)
-                                                : Colors.white24),
-                                        onPressed: canBook &&
-                                                selectedSeats <
-                                                    effectiveMaxSeats
-                                            ? () =>
-                                                setState(() => selectedSeats++)
-                                            : null,
-                                      ),
-                                    ],
-                                  ),
-                                  Text(
-                                    "₹${(int.tryParse(data['price']?.toString() ?? '150') ?? 150) * selectedSeats}",
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        // Booked Users
-                        if (data['bookedUsers'] != null &&
-                            (data['bookedUsers'] as List).isNotEmpty) ...[
-                          const SizedBox(height: 20),
-                          Container(
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1E1E1E),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: Colors.white10),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  "Booked Users (${(data['bookedUsers'] as List).length})",
-                                  style: const TextStyle(
-                                      color: Colors.white70, fontSize: 14),
-                                ),
-                                const SizedBox(height: 10),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: (data['bookedUsers'] as List)
-                                      .map<Widget>((user) {
-                                    final name = user is Map
-                                        ? (user['name'] ?? 'User')
-                                        : 'User';
-                                    final pic =
-                                        user is Map ? user['profilePic'] : null;
-                                    return Chip(
-                                      backgroundColor: Colors.white10,
-                                      avatar: CircleAvatar(
-                                        backgroundColor: Colors.grey,
-                                        backgroundImage: pic != null
-                                            ? NetworkImage(pic)
-                                            : null,
-                                        child: pic == null
-                                            ? const Icon(Icons.person,
-                                                size: 12, color: Colors.white)
-                                            : null,
-                                      ),
-                                      label: Text(
-                                        name,
-                                        style: const TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 12),
-                                      ),
-                                    );
-                                  }).toList(),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
+          floatingActionButton: canChat
+              ? FloatingActionButton(
+                  onPressed: () => Navigator.push(
+                      context,
+                      CustomPageRoute(
+                          child: ChatScreen(
+                              rideId: widget.rideId, title: "Ride Chat"))),
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                  child: const Icon(Icons.chat_bubble_outline),
+                )
+              : null,
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF1A1F25), Color(0xFF000000)],
                     ),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    children: [
-                      SizedBox(
-                        width: double.infinity,
-                        height: 55,
-                        child: ElevatedButton(
-                          onPressed: (canBook && hasChanges) ? _bookRide : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: Colors.black,
-                            disabledBackgroundColor: Colors.white24,
-                            disabledForegroundColor: Colors.white38,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14)),
-                          ),
-                          child: isBooking
-                              ? const CircularProgressIndicator(
-                                  color: Colors.black)
-                              : Text(
-                                  effectiveBookingId != null
-                                      ? "Update Booking"
-                                      : "Book Ride",
-                                  style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold)),
+              ),
+              SafeArea(
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (isAlreadyBooked)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 20),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                      color:
+                                          Colors.blueAccent.withOpacity(0.3)),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(Icons.info_outline,
+                                        color: Colors.blueAccent, size: 20),
+                                    SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        "You have already booked this ride.",
+                                        style: TextStyle(
+                                            color: Colors.blueAccent,
+                                            fontSize: 13),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (effectiveBookingId != null)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 20),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                      color:
+                                          Colors.blueAccent.withOpacity(0.3)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.info_outline,
+                                        color: Colors.blueAccent, size: 20),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                          "You have booked this ride for ${effectiveBookedSeats ?? 0} seat(s).",
+                                          style: const TextStyle(
+                                              color: Colors.blueAccent,
+                                              fontSize: 13)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (isFullyBooked && !isAlreadyBooked)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 20),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                      color:
+                                          Colors.orangeAccent.withOpacity(0.3)),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(Icons.warning_amber_rounded,
+                                        color: Colors.orangeAccent, size: 20),
+                                    SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        "This ride is fully booked.",
+                                        style: TextStyle(
+                                            color: Colors.orangeAccent,
+                                            fontSize: 13),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            // Driver Info Card
+                            _driverCard(isCompleted),
+                            const SizedBox(height: 20),
+
+                            // Ride Info
+                            _glassContainer(
+                              padding: const EdgeInsets.all(20),
+                              child: Column(
+                                children: [
+                                  _row(Icons.calendar_today,
+                                      _formatDate(data['date'])),
+                                  const SizedBox(height: 12),
+                                  _row(Icons.access_time, data['time'] ?? ''),
+                                  const Divider(
+                                      color: Colors.white10, height: 24),
+                                  _locationRow(Icons.circle, Colors.green,
+                                      data['from'] ?? '', data['time'] ?? ''),
+                                  Container(
+                                    margin: const EdgeInsets.only(left: 11),
+                                    height: 20,
+                                    width: 2,
+                                    color: Colors.white24,
+                                  ),
+                                  _locationRow(
+                                      Icons.location_on,
+                                      Colors.redAccent,
+                                      data['to'] ?? '',
+                                      endTimeStr),
+                                ],
+                              ),
+                            ),
+
+                            if (data['vehicleModel'] != null &&
+                                (data['vehicleModel'] as String)
+                                    .isNotEmpty) ...[
+                              const SizedBox(height: 20),
+                              _glassContainer(
+                                padding: const EdgeInsets.all(20),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.directions_car,
+                                        color: Colors.white70),
+                                    const SizedBox(width: 12),
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                            "${data['vehicleModel']} (${data['vehicleType'] ?? 'Car'})",
+                                            style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold)),
+                                        if (data['vehicleColor'] != null)
+                                          Text(data['vehicleColor'],
+                                              style: const TextStyle(
+                                                  color: Colors.white70,
+                                                  fontSize: 13)),
+                                        if (data['vehicleNumber'] != null &&
+                                            (data['vehicleNumber'] as String)
+                                                .isNotEmpty)
+                                          Text(data['vehicleNumber'],
+                                              style: const TextStyle(
+                                                  color: Colors.white54,
+                                                  fontSize: 12)),
+                                      ],
+                                    )
+                                  ],
+                                ),
+                              ),
+                            ],
+
+                            const SizedBox(height: 20),
+
+                            // Seat Selection
+                            _glassContainer(
+                              padding: const EdgeInsets.all(20),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text("Select Seats",
+                                      style: TextStyle(color: Colors.white70)),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          IconButton(
+                                            icon: Icon(
+                                                Icons.remove_circle_outline,
+                                                color: selectedSeats > 1
+                                                    ? (canBook
+                                                        ? Colors.white
+                                                        : Colors.white24)
+                                                    : Colors.white24),
+                                            onPressed:
+                                                canBook && selectedSeats > 1
+                                                    ? () => setState(
+                                                        () => selectedSeats--)
+                                                    : null,
+                                          ),
+                                          Text("$selectedSeats",
+                                              style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 18)),
+                                          IconButton(
+                                            icon: Icon(Icons.add_circle_outline,
+                                                color: canBook &&
+                                                        selectedSeats <
+                                                            effectiveMaxSeats
+                                                    ? (canBook
+                                                        ? Colors.white
+                                                        : Colors.white24)
+                                                    : Colors.white24),
+                                            onPressed: canBook &&
+                                                    selectedSeats <
+                                                        effectiveMaxSeats
+                                                ? () => setState(
+                                                    () => selectedSeats++)
+                                                : null,
+                                          ),
+                                        ],
+                                      ),
+                                      Text(
+                                        "₹${(int.tryParse(data['price']?.toString() ?? '150') ?? 150) * selectedSeats}",
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            // Booked Users
+                            if (data['bookedUsers'] != null &&
+                                (data['bookedUsers'] as List).isNotEmpty) ...[
+                              const SizedBox(height: 20),
+                              _glassContainer(
+                                padding: const EdgeInsets.all(20),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      "Booked Users (${(data['bookedUsers'] as List).length})",
+                                      style: const TextStyle(
+                                          color: Colors.white70, fontSize: 14),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: (data['bookedUsers'] as List)
+                                          .map<Widget>((user) {
+                                        final name = user is Map
+                                            ? (user['name'] ?? 'User')
+                                            : 'User';
+                                        final pic = user is Map
+                                            ? user['profilePic']
+                                            : null;
+                                        return Chip(
+                                          backgroundColor: Colors.white10,
+                                          avatar: CircleAvatar(
+                                            backgroundColor: Colors.grey,
+                                            backgroundImage: pic != null
+                                                ? NetworkImage(pic)
+                                                : null,
+                                            child: pic == null
+                                                ? const Icon(Icons.person,
+                                                    size: 12,
+                                                    color: Colors.white)
+                                                : null,
+                                          ),
+                                          label: Text(
+                                            name,
+                                            style: const TextStyle(
+                                                color: Colors.white70,
+                                                fontSize: 12),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                    if (isCompleted &&
+                                        uid == widget.driverId) ...[
+                                      const SizedBox(height: 16),
+                                      const Text("Rate Passengers:",
+                                          style: TextStyle(
+                                              color: Colors.white54,
+                                              fontSize: 12)),
+                                      const SizedBox(height: 8),
+                                      Column(
+                                        children: (data['bookedUsers'] as List)
+                                            .map<Widget>((user) {
+                                          return ListTile(
+                                            contentPadding: EdgeInsets.zero,
+                                            leading: const Icon(Icons.person,
+                                                color: Colors.white),
+                                            title: Text(user['name'] ?? 'User',
+                                                style: const TextStyle(
+                                                    color: Colors.white)),
+                                            trailing: IconButton(
+                                              icon: const Icon(
+                                                  Icons.star_border,
+                                                  color: Colors.amber),
+                                              onPressed: () => _openRateScreen(
+                                                  user['uid'],
+                                                  user['name'] ?? 'User',
+                                                  true),
+                                            ),
+                                          );
+                                        }).toList(),
+                                      )
+                                    ]
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
-                      if (effectiveBookingId != null) ...[
-                        const SizedBox(height: 10),
-                        TextButton(
-                          onPressed: isBooking ? null : _cancelBooking,
-                          child: const Text(
-                            "Cancel Booking",
-                            style: TextStyle(
-                                color: Colors.redAccent, fontSize: 16),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        children: [
+                          SizedBox(
+                            width: double.infinity,
+                            height: 55,
+                            child: ElevatedButton(
+                              onPressed:
+                                  (canBook && hasChanges) ? _bookRide : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: Colors.black,
+                                disabledBackgroundColor: Colors.white24,
+                                disabledForegroundColor: Colors.white38,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14)),
+                              ),
+                              child: isBooking
+                                  ? const CircularProgressIndicator(
+                                      color: Colors.black)
+                                  : Text(
+                                      effectiveBookingId != null
+                                          ? "Update Booking"
+                                          : "Book Ride",
+                                      style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold)),
+                            ),
                           ),
-                        )
-                      ]
-                    ],
-                  ),
+                          if (effectiveBookingId != null) ...[
+                            const SizedBox(height: 10),
+                            TextButton(
+                              onPressed: isBooking ? null : _cancelBooking,
+                              child: const Text(
+                                "Cancel Booking",
+                                style: TextStyle(
+                                    color: Colors.redAccent, fontSize: 16),
+                              ),
+                            )
+                          ]
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         );
       },
     );
   }
 
-  Widget _driverCard() {
+  Widget _driverCard(bool isCompleted) {
     if (isLoadingDriver) {
       return const Center(
           child: CircularProgressIndicator(color: Colors.white));
@@ -714,13 +788,8 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
       }
     }
 
-    return Container(
+    return _glassContainer(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white10),
-      ),
       child: Row(
         children: [
           const CircleAvatar(
@@ -765,10 +834,37 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                     ),
                   ],
                 ),
+                if (isCompleted &&
+                    _userRepo.currentUser?.uid != widget.driverId)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: InkWell(
+                      onTap: () =>
+                          _openRateScreen(widget.driverId, name, false),
+                      child: const Text("Rate Driver",
+                          style: TextStyle(
+                              color: Colors.amber,
+                              fontWeight: FontWeight.bold)),
+                    ),
+                  ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _openRateScreen(String userId, String userName, bool isDriverReviewing) {
+    Navigator.push(
+      context,
+      CustomPageRoute(
+        child: RateUserScreen(
+          rideId: widget.rideId,
+          revieweeId: userId,
+          revieweeName: userName,
+          isDriverReviewing: isDriverReviewing,
+        ),
       ),
     );
   }
@@ -817,6 +913,24 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _glassContainer({required Widget child, EdgeInsetsGeometry? padding}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withOpacity(0.1)),
+          ),
+          child: child,
+        ),
+      ),
     );
   }
 }
