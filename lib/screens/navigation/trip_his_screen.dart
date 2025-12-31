@@ -515,37 +515,6 @@ class _TripCard extends StatelessWidget {
             ],
           ),
 
-          // Booked Users Section
-          if (isOffered &&
-              data['bookedUsers'] != null &&
-              (data['bookedUsers'] as List).isNotEmpty) ...[
-            const Divider(color: Colors.white10, height: 24),
-            const Text(
-              "Booked by:",
-              style: TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: (data['bookedUsers'] as List).map<Widget>((user) {
-                // Assuming user is a Map or String. Adjust based on actual data structure.
-                final name = user is Map ? user['name'] : user.toString();
-                return Chip(
-                  backgroundColor: Colors.white10,
-                  labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-                  avatar: const CircleAvatar(
-                    backgroundColor: Colors.grey,
-                    child: Icon(Icons.person, size: 12, color: Colors.white),
-                  ),
-                  label: Text(
-                    name,
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
-
           // Driver Info Section for Booked Rides
           if (!isOffered && data['driverId'] != null) ...[
             const Divider(color: Colors.white10, height: 24),

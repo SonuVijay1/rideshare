@@ -6,6 +6,9 @@ import 'ride_history_screen.dart';
 import 'payments_screen.dart';
 import 'help_support_screen.dart';
 import '../../utils/custom_route.dart';
+import 'edit_profile_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'personal_details_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -59,6 +62,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         elevation: 0,
         title: const Text("My Profile", style: TextStyle(color: Colors.white)),
         actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                CustomPageRoute(child: const EditProfileScreen()),
+              ).then((_) => _fetchUserData());
+            },
+            child: const Text("Edit", style: TextStyle(color: Colors.white)),
+          ),
           IconButton(
             icon: const Icon(Icons.settings, color: Colors.white),
             onPressed: () {},
@@ -118,6 +130,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 style: const TextStyle(
                                     color: Colors.white54, fontSize: 14),
                               ),
+                              if (_userData?['occupation'] != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4.0),
+                                  child: Text(
+                                    "${_userData?['occupation']} ${_userData?['company'] != null ? 'at ${_userData?['company']}' : ''}",
+                                    style: const TextStyle(
+                                        color: Colors.white70, fontSize: 13),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
@@ -137,11 +158,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             Expanded(
                                 child: _statCard("Rating",
                                     "${(_userData?['driverRating'] as num?)?.toStringAsFixed(1) ?? 'New'}")),
+                            const SizedBox(width: 12),
+                            Expanded(
+                                child: _statCard("Gratitude",
+                                    "${_userData?['gratitudeCount'] ?? 0}")),
                           ],
                         ),
                         const SizedBox(height: 30),
 
+                        // About Section (Bio & LinkedIn)
+                        _buildInfoCard(),
+                        const SizedBox(height: 30),
+
                         // Menu Options
+                        _menuItem(Icons.person_outline, "Personal Details", () {
+                          Navigator.push(
+                            context,
+                            CustomPageRoute(
+                                child: const PersonalDetailsScreen()),
+                          );
+                        }),
+                        const SizedBox(height: 12),
                         _menuItem(Icons.directions_car, "My Vehicles", () {
                           Navigator.push(
                             context,
@@ -199,6 +236,86 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoCard() {
+    final bio = _userData?['bio'];
+    final linkedin = _userData?['linkedin'];
+    final sector = _userData?['sector'];
+    final achievements = _userData?['achievements'];
+
+    if ((bio == null || bio.isEmpty) &&
+        (linkedin == null || linkedin.isEmpty) &&
+        sector == null &&
+        (achievements == null || achievements.isEmpty)) {
+      return const SizedBox.shrink();
+    }
+
+    return _glassContainer(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("About",
+              style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18)),
+          const SizedBox(height: 16),
+          if (bio != null && bio.isNotEmpty) ...[
+            Text(bio,
+                style: const TextStyle(color: Colors.white70, height: 1.5)),
+            const SizedBox(height: 20),
+          ],
+          if (sector != null) ...[
+            Text("Sector: $sector",
+                style: const TextStyle(
+                    color: Colors.white70, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 12),
+          ],
+          if (achievements != null && achievements.isNotEmpty) ...[
+            const Text("Achievements",
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text(achievements,
+                style: const TextStyle(color: Colors.white70, height: 1.4)),
+            const SizedBox(height: 20),
+          ],
+          if (linkedin != null && linkedin.isNotEmpty)
+            InkWell(
+              onTap: () async {
+                final Uri url = Uri.parse(linkedin);
+                if (await canLaunchUrl(url)) {
+                  await launchUrl(url, mode: LaunchMode.externalApplication);
+                }
+              },
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                        color: Colors.blue[700],
+                        borderRadius: BorderRadius.circular(4)),
+                    child: const Text("in",
+                        style: TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text("View LinkedIn Profile",
+                        style: TextStyle(color: Colors.blueAccent)),
+                  ),
+                  const Icon(Icons.open_in_new,
+                      color: Colors.blueAccent, size: 16),
+                ],
+              ),
+            ),
         ],
       ),
     );

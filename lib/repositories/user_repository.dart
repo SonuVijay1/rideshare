@@ -31,6 +31,9 @@ abstract class UserRepository {
       String uid, String vehicleId, Map<String, dynamic> data);
   Future<void> deleteVehicle(String uid, String vehicleId);
   Future<void> rateUser(String uid, double rating, bool asDriver);
+  Future<void> updateOnlineStatus(bool isOnline);
+  Future<void> reportUser(String reporterId, String reportedId, String reason);
+  Future<void> sendGratitude(String senderId, String receiverId);
 }
 
 class FirebaseUserRepository implements UserRepository {
@@ -216,5 +219,43 @@ class FirebaseUserRepository implements UserRepository {
       transaction.update(
           userRef, {ratingField: newRating, countField: currentCount + 1});
     });
+  }
+
+  @override
+  Future<void> updateOnlineStatus(bool isOnline) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    await _firestore.collection('users').doc(user.uid).update({
+      'isOnline': isOnline,
+      'lastSeen': FieldValue.serverTimestamp(),
+    });
+  }
+
+  @override
+  Future<void> reportUser(
+      String reporterId, String reportedId, String reason) async {
+    await _firestore.collection('reports').add({
+      'reporterId': reporterId,
+      'reportedId': reportedId,
+      'reason': reason,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  @override
+  Future<void> sendGratitude(String senderId, String receiverId) async {
+    final ref = _firestore
+        .collection('users')
+        .doc(receiverId)
+        .collection('gratitudes')
+        .doc(senderId);
+    final doc = await ref.get();
+    if (!doc.exists) {
+      await ref.set({
+        'senderId': senderId,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      await incrementUserStat(receiverId, 'gratitudeCount', 1);
+    }
   }
 }

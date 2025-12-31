@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import '../home/home_screen.dart';
 import 'trip_his_screen.dart';
-import 'messages_screen.dart';
+import '../messages/messages_screen.dart';
 import 'account_screen.dart';
+import '../../repositories/user_repository.dart';
 
 class MainNav extends StatefulWidget {
   const MainNav({super.key});
@@ -11,8 +12,32 @@ class MainNav extends StatefulWidget {
   State<MainNav> createState() => _MainNavState();
 }
 
-class _MainNavState extends State<MainNav> {
+class _MainNavState extends State<MainNav> with WidgetsBindingObserver {
   int _index = 0;
+  final UserRepository _userRepo = FirebaseUserRepository();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _userRepo.updateOnlineStatus(true);
+  }
+
+  @override
+  void dispose() {
+    _userRepo.updateOnlineStatus(false);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _userRepo.updateOnlineStatus(true);
+    } else {
+      _userRepo.updateOnlineStatus(false);
+    }
+  }
 
   final screens = [
     const HomeScreen(), // Ride

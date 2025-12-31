@@ -3,12 +3,21 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../repositories/ride_repository.dart';
 import '../../repositories/user_repository.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:intl/intl.dart';
 
 class ChatScreen extends StatefulWidget {
   final String rideId;
   final String title;
+  final String driverId;
+  final bool isDriver;
 
-  const ChatScreen({super.key, required this.rideId, required this.title});
+  const ChatScreen(
+      {super.key,
+      required this.rideId,
+      required this.title,
+      required this.driverId,
+      required this.isDriver});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -22,11 +31,13 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _currentUserName;
   Timer? _debounce;
   bool _isTyping = false;
+  String? _targetUserId; // The ID of the person we are chatting with (for status)
 
   @override
   void initState() {
     super.initState();
     _fetchUserName();
+    _determineTargetUser();
   }
 
   @override
@@ -45,6 +56,21 @@ class _ChatScreenState extends State<ChatScreen> {
           _currentUserName = data?['name'] ?? 'User';
         });
       }
+    }
+  }
+
+  Future<void> _determineTargetUser() async {
+    if (!widget.isDriver) {
+      // If I am passenger, target is driver
+      setState(() => _targetUserId = widget.driverId);
+    } else {
+      // If I am driver, check if there is exactly one passenger
+      final ride = await _rideRepo.getRide(widget.driverId, widget.rideId);
+      final bookedUsers = ride?['bookedUsers'] as List<dynamic>? ?? [];
+      if (bookedUsers.length == 1) {
+        setState(() => _targetUserId = bookedUsers.first['uid']);
+      }
+      // If multiple passengers, we don't show specific online status in header
     }
   }
 
@@ -79,7 +105,8 @@ class _ChatScreenState extends State<ChatScreen> {
       _currentUserName = name;
     }
 
-    _rideRepo.sendMessage(widget.rideId, _controller.text.trim(), user.uid, name);
+    _rideRepo.sendMessage(
+        widget.rideId, _controller.text.trim(), user.uid, name);
     _controller.clear();
 
     // Clear typing status immediately
@@ -100,8 +127,14 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Text(widget.title, style: const TextStyle(color: Colors.white)),
+        title: _buildAppBarTitle(),
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.phone),
+            onPressed: _handleCallAction,
+          ),
+        ],
       ),
       body: Stack(
         children: [
@@ -137,6 +170,11 @@ class _ChatScreenState extends State<ChatScreen> {
                         );
                       }
 
+                      // Mark messages as read if they are not mine
+                      if (user != null) {
+                        _rideRepo.markMessagesAsRead(widget.rideId, user.uid);
+                      }
+
                       return ListView.builder(
                         reverse: true,
                         padding: const EdgeInsets.all(20),
@@ -157,6 +195,50 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAppBarTitle() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(widget.title, style: const TextStyle(color: Colors.white, fontSize: 16)),
+        if (_targetUserId != null)
+          StreamBuilder<Map<String, dynamic>?>(
+            stream: _userRepo.getUserStream(_targetUserId!),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) return const SizedBox();
+              final data = snapshot.data!;
+              final isOnline = data['isOnline'] == true;
+              final lastSeen = data['lastSeen'];
+
+              String statusText = "Offline";
+              if (isOnline) {
+                statusText = "Online";
+              } else if (lastSeen != null) {
+                // Handle Timestamp or DateTime
+                DateTime? dt;
+                if (lastSeen is DateTime) dt = lastSeen;
+                // Firestore Timestamp handling if not converted by repo
+                // if (lastSeen is Timestamp) dt = lastSeen.toDate();
+                
+                if (dt != null) {
+                  final now = DateTime.now();
+                  final diff = now.difference(dt);
+                  if (diff.inMinutes < 60) {
+                    statusText = "Last seen ${diff.inMinutes}m ago";
+                  } else if (diff.inHours < 24) {
+                    statusText = "Last seen ${DateFormat('h:mm a').format(dt)}";
+                  } else {
+                    statusText = "Last seen ${DateFormat('MMM d').format(dt)}";
+                  }
+                }
+              }
+
+              return Text(statusText, style: const TextStyle(color: Colors.white70, fontSize: 12));
+            },
+          ),
+      ],
     );
   }
 
@@ -187,11 +269,31 @@ class _ChatScreenState extends State<ChatScreen> {
                       fontSize: 10,
                       fontWeight: FontWeight.bold)),
             if (!isMe) const SizedBox(height: 4),
-            Text(msg['text'] ?? '',
-                style: const TextStyle(color: Colors.white)),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Flexible(
+                  child: Text(msg['text'] ?? '',
+                      style: const TextStyle(color: Colors.white)),
+                ),
+                if (isMe) ...[
+                  const SizedBox(width: 6),
+                  _buildReadStatus(msg['isRead'] == true),
+                ]
+              ],
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildReadStatus(bool isRead) {
+    return Icon(
+      Icons.done_all,
+      size: 16,
+      color: isRead ? Colors.lightBlueAccent : Colors.white54,
     );
   }
 
@@ -266,5 +368,121 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _handleCallAction() async {
+    if (widget.isDriver) {
+      _showPassengerList();
+    } else {
+      _callDriver();
+    }
+  }
+
+  Future<void> _callDriver() async {
+    final user = _userRepo.currentUser;
+    if (user == null) return;
+
+    // Check booking status
+    final booking = await _rideRepo.getBookingForRide(user.uid, widget.rideId);
+    if (booking == null || booking['status'] != 'Confirmed') {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content:
+                  Text("Phone number is visible only for confirmed bookings.")),
+        );
+      }
+      return;
+    }
+
+    final driver = await _userRepo.getUser(widget.driverId);
+    final phone = driver?['phone'] ?? driver?['phoneNumber'];
+
+    if (phone != null && phone.isNotEmpty) {
+      _launchCaller(phone);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Driver phone number not available.")),
+        );
+      }
+    }
+  }
+
+  Future<void> _showPassengerList() async {
+    final ride = await _rideRepo.getRide(widget.driverId, widget.rideId);
+    if (ride == null) return;
+
+    final bookedUsers =
+        List<Map<String, dynamic>>.from(ride['bookedUsers'] ?? []);
+    if (bookedUsers.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("No passengers have booked yet.")),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      builder: (context) => ListView.builder(
+        shrinkWrap: true,
+        padding: const EdgeInsets.all(16),
+        itemCount: bookedUsers.length,
+        itemBuilder: (context, index) {
+          final u = bookedUsers[index];
+          return ListTile(
+            leading: const Icon(Icons.person, color: Colors.white),
+            title: Text(u['name'] ?? 'Passenger',
+                style: const TextStyle(color: Colors.white)),
+            trailing: const Icon(Icons.phone, color: Colors.greenAccent),
+            onTap: () async {
+              final userData = await _userRepo.getUser(u['uid']);
+              final phone = userData?['phone'] ?? userData?['phoneNumber'];
+              if (phone != null) {
+                _launchCaller(phone);
+              } else {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text("Phone number not available")));
+              }
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _launchCaller(String number) async {
+    final Uri launchUri = Uri(scheme: 'tel', path: number);
+    try {
+      if (await canLaunchUrl(launchUri)) {
+        await launchUrl(launchUri, mode: LaunchMode.externalApplication);
+      } else {
+        throw 'Could not launch';
+      }
+    } catch (e) {
+      if (mounted) {
+        showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+                  backgroundColor: const Color(0xFF1E1E1E),
+                  title: const Text("Contact Number",
+                      style: TextStyle(color: Colors.white)),
+                  content: Text(number,
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 18)),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text("Close"))
+                  ],
+                ));
+      }
+    }
   }
 }

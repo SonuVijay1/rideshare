@@ -11,6 +11,8 @@ import '../../repositories/user_repository.dart';
 
 import 'offer_ride_details_screen.dart';
 import '../../utils/custom_route.dart';
+import 'cancellation_reason_screen.dart';
+import 'ride_published_screen.dart';
 
 enum LastEdited { pickup, drop }
 
@@ -68,6 +70,7 @@ class _OfferRideScreenState extends State<OfferRideScreen>
   String? _selectedVehicleId;
 
   final UserRepository _userRepo = FirebaseUserRepository();
+  final RideRepository _rideRepo = FirebaseRideRepository();
 
   @override
   void initState() {
@@ -342,6 +345,49 @@ class _OfferRideScreenState extends State<OfferRideScreen>
     );
   }
 
+  Future<void> _cancelRide() async {
+    final reason = await Navigator.push(
+      context,
+      CustomPageRoute(child: const CancellationReasonScreen()),
+    );
+
+    if (reason == null || reason is! String || reason.isEmpty) return;
+
+    if (!mounted) return;
+    showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (c) =>
+            const Center(child: CircularProgressIndicator(color: Colors.white)));
+
+    try {
+      final user = _userRepo.currentUser;
+      if (user != null && widget.rideId != null) {
+        await _rideRepo.cancelRide(user.uid, widget.rideId!, reason);
+        await _userRepo.incrementUserStat(user.uid, 'ridesOffered', -1);
+        await _userRepo.incrementUserStat(user.uid, 'ridesCancelled', 1);
+
+        if (!mounted) return;
+        Navigator.pop(context); // Pop loading
+
+        Navigator.pushAndRemoveUntil(
+          context,
+          CustomPageRoute(
+              child: RidePublishedScreen(
+                  rideData: widget.existingRideData ?? {},
+                  isCancellation: true)),
+          (route) => route.isFirst,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Pop loading
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("Error: $e")));
+      }
+    }
+  }
+
   /* ---------------- UI ---------------- */
   @override
   Widget build(BuildContext context) {
@@ -448,6 +494,17 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                           ),
                           const SizedBox(height: 15),
                         ],
+                        if (widget.rideId != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: TextButton.icon(
+                              onPressed: _cancelRide,
+                              icon: const Icon(Icons.cancel,
+                                  color: Colors.redAccent, size: 20),
+                              label: const Text("Cancel Ride",
+                                  style: TextStyle(color: Colors.redAccent)),
+                            ),
+                          ),
                       ],
                     ),
                   ),

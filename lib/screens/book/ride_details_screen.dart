@@ -7,6 +7,7 @@ import '../../repositories/user_repository.dart';
 import '../reviews/rate_user_screen.dart';
 import '../chat/chat_screen.dart';
 import '../../utils/custom_route.dart';
+import '../profile/user_profile_screen.dart';
 
 class RideDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> rideData;
@@ -362,18 +363,6 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                 style: const TextStyle(color: Colors.white)),
             iconTheme: const IconThemeData(color: Colors.white),
           ),
-          floatingActionButton: canChat
-              ? FloatingActionButton(
-                  onPressed: () => Navigator.push(
-                      context,
-                      CustomPageRoute(
-                          child: ChatScreen(
-                              rideId: widget.rideId, title: "Ride Chat"))),
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.black,
-                  child: const Icon(Icons.chat_bubble_outline),
-                )
-              : null,
           body: Stack(
             children: [
               Positioned.fill(
@@ -640,24 +629,39 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                                         final pic = user is Map
                                             ? user['profilePic']
                                             : null;
-                                        return Chip(
-                                          backgroundColor: Colors.white10,
-                                          avatar: CircleAvatar(
-                                            backgroundColor: Colors.grey,
-                                            backgroundImage: pic != null
-                                                ? NetworkImage(pic)
-                                                : null,
-                                            child: pic == null
-                                                ? const Icon(Icons.person,
-                                                    size: 12,
-                                                    color: Colors.white)
-                                                : null,
-                                          ),
-                                          label: Text(
-                                            name,
-                                            style: const TextStyle(
-                                                color: Colors.white70,
-                                                fontSize: 12),
+                                        return InkWell(
+                                          onTap: () {
+                                            if (user is Map &&
+                                                user['uid'] != null) {
+                                              Navigator.push(
+                                                  context,
+                                                  CustomPageRoute(
+                                                      child: UserProfileScreen(
+                                                          userId: user['uid'],
+                                                          userName: name,
+                                                          rideId:
+                                                              widget.rideId)));
+                                            }
+                                          },
+                                          child: Chip(
+                                            backgroundColor: Colors.white10,
+                                            avatar: CircleAvatar(
+                                              backgroundColor: Colors.grey,
+                                              backgroundImage: pic != null
+                                                  ? NetworkImage(pic)
+                                                  : null,
+                                              child: pic == null
+                                                  ? const Icon(Icons.person,
+                                                      size: 12,
+                                                      color: Colors.white)
+                                                  : null,
+                                            ),
+                                            label: Text(
+                                              name,
+                                              style: const TextStyle(
+                                                  color: Colors.white70,
+                                                  fontSize: 12),
+                                            ),
                                           ),
                                         );
                                       }).toList(),
@@ -790,67 +794,78 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
 
     return _glassContainer(
       padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          const CircleAvatar(
-            radius: 24,
-            backgroundColor: Colors.grey,
-            child: Icon(Icons.person, color: Colors.white),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.star, color: Colors.amber, size: 14),
-                        Text(" $rating ($ridesOffered rides)",
-                            style: const TextStyle(
-                                color: Colors.white70, fontSize: 12)),
-                      ],
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: cancelColor.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(cancelStatus,
-                          style: TextStyle(color: cancelColor, fontSize: 10)),
-                    ),
-                  ],
-                ),
-                if (isCompleted &&
-                    _userRepo.currentUser?.uid != widget.driverId)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: InkWell(
-                      onTap: () =>
-                          _openRateScreen(widget.driverId, name, false),
-                      child: const Text("Rate Driver",
-                          style: TextStyle(
-                              color: Colors.amber,
-                              fontWeight: FontWeight.bold)),
-                    ),
-                  ),
-              ],
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+              context,
+              CustomPageRoute(
+                  child: UserProfileScreen(
+                      userId: widget.driverId,
+                      userName: name,
+                      rideId: widget.rideId)));
+        },
+        child: Row(
+          children: [
+            const CircleAvatar(
+              radius: 24,
+              backgroundColor: Colors.grey,
+              child: Icon(Icons.person, color: Colors.white),
             ),
-          ),
-        ],
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.star, color: Colors.amber, size: 14),
+                          Text(" $rating ($ridesOffered rides)",
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 12)),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: cancelColor.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(cancelStatus,
+                            style: TextStyle(color: cancelColor, fontSize: 10)),
+                      ),
+                    ],
+                  ),
+                  if (isCompleted &&
+                      _userRepo.currentUser?.uid != widget.driverId)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: InkWell(
+                        onTap: () =>
+                            _openRateScreen(widget.driverId, name, false),
+                        child: const Text("Rate Driver",
+                            style: TextStyle(
+                                color: Colors.amber,
+                                fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

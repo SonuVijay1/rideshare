@@ -44,6 +44,7 @@ abstract class RideRepository {
   Stream<List<Map<String, dynamic>>> getMessages(String rideId);
   Future<void> sendMessage(
       String rideId, String message, String senderId, String senderName);
+  Future<void> markMessagesAsRead(String rideId, String currentUserId);
   Future<void> setTypingStatus(
       String rideId, String userId, String userName, bool isTyping);
   Stream<List<String>> getTypingUsers(String rideId, String excludeUserId);
@@ -146,42 +147,53 @@ class FirebaseRideRepository implements RideRepository {
 
   @override
   Stream<List<Map<String, dynamic>>> getDriverTrips(String uid) {
+    print("DEBUG: getDriverTrips stream started for UID: $uid");
     return _firestore
         .collection("rides")
         .where('driverId', isEqualTo: uid)
         .snapshots()
         .map((snap) {
-      final trips = snap.docs.map((d) {
-        final data = d.data();
-        data['rideId'] = d.id;
-        return data;
-      }).toList();
-      // Sort client-side to avoid composite index requirement
-      trips.sort((a, b) => (b['date'] ?? '').compareTo(a['date'] ?? ''));
-      return trips;
+      print(
+          "DEBUG: getDriverTrips snapshot received. Docs: ${snap.docs.length}");
+      try {
+        final trips = snap.docs.map((d) {
+          final data = Map<String, dynamic>.from(d.data());
+          data['rideId'] = d.id;
+          return data;
+        }).toList();
+        // Removed sort here to prevent crashes. UI handles sorting.
+        print("DEBUG: getDriverTrips processed ${trips.length} trips");
+        return trips;
+      } catch (e) {
+        print("DEBUG: Error processing driver trips: $e");
+        return <Map<String, dynamic>>[];
+      }
     });
   }
 
   @override
   Stream<List<Map<String, dynamic>>> getBookedTrips(String uid) {
+    print("DEBUG: getBookedTrips stream started for UID: $uid");
     return _firestore
         .collection("rideBookings")
         .where('passengerId', isEqualTo: uid)
         .snapshots()
         .map((snap) {
-      final trips = snap.docs.map((d) {
-        final data = d.data();
-        data['bookingId'] = d.id;
-        return data;
-      }).toList();
-      // Sort client-side
-      trips.sort((a, b) {
-        final tA = a['bookedAt'];
-        final tB = b['bookedAt'];
-        if (tA is Timestamp && tB is Timestamp) return tB.compareTo(tA);
-        return (tB?.toString() ?? '').compareTo(tA?.toString() ?? '');
-      });
-      return trips;
+      print(
+          "DEBUG: getBookedTrips snapshot received. Docs: ${snap.docs.length}");
+      try {
+        final trips = snap.docs.map((d) {
+          final data = Map<String, dynamic>.from(d.data());
+          data['bookingId'] = d.id;
+          return data;
+        }).toList();
+        // Removed sort here to prevent crashes. UI handles sorting.
+        print("DEBUG: getBookedTrips processed ${trips.length} trips");
+        return trips;
+      } catch (e) {
+        print("DEBUG: Error processing booked trips: $e");
+        return <Map<String, dynamic>>[];
+      }
     });
   }
 
@@ -290,6 +302,7 @@ class FirebaseRideRepository implements RideRepository {
         bookingData['bookedAt'] = FieldValue.serverTimestamp();
         bookingData['driverId'] = driverId;
         bookingData['rideId'] = rideId;
+        print("DEBUG: Creating booking with passengerId: $userId");
         transaction.set(myBookingRef, bookingData);
       }
     }).then((_) {
@@ -366,6 +379,7 @@ class FirebaseRideRepository implements RideRepository {
 
   @override
   Stream<List<Map<String, dynamic>>> getMessages(String rideId) {
+    print("DEBUG: Fetching messages from rides/$rideId/messages");
     return _firestore
         .collection('rides')
         .doc(rideId)
@@ -378,17 +392,25 @@ class FirebaseRideRepository implements RideRepository {
   @override
   Future<void> sendMessage(
       String rideId, String message, String senderId, String senderName) async {
+    print("DEBUG: sendMessage called. RideId: $rideId, Msg: $message");
     // 1. Add to subcollection
-    await _firestore
-        .collection('rides')
-        .doc(rideId)
-        .collection('messages')
-        .add({
-      'text': message,
-      'senderId': senderId,
-      'senderName': senderName,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    try {
+      await _firestore
+          .collection('rides')
+          .doc(rideId)
+          .collection('messages')
+          .add({
+        'text': message,
+        'senderId': senderId,
+        'senderName': senderName,
+        'createdAt': FieldValue.serverTimestamp(),
+        'isRead': false,
+      });
+      print("DEBUG: Message added to subcollection.");
+    } catch (e) {
+      print("DEBUG: Error sending message to subcollection: $e");
+      return;
+    }
 
     // 2. Update metadata for list views (Ride & Bookings)
     final updateData = {
@@ -397,17 +419,78 @@ class FirebaseRideRepository implements RideRepository {
     };
 
     // Update Ride (for Driver)
-    await _firestore.collection('rides').doc(rideId).update(updateData);
+    try {
+      print("DEBUG: Updating ride metadata...");
+      // Use set with merge to ensure it writes even if specific fields are missing
+      await _firestore
+          .collection('rides')
+          .doc(rideId)
+          .set(updateData, SetOptions(merge: true));
+      print("DEBUG: Ride metadata updated.");
+    } catch (e) {
+      print("DEBUG: Error updating ride metadata: $e");
+    }
 
     // Update Bookings (for Passengers)
-    final bookings = await _firestore
-        .collection('rideBookings')
-        .where('rideId', isEqualTo: rideId)
+    try {
+      print("DEBUG: Querying bookings to update metadata...");
+      final bookings = await _firestore
+          .collection('rideBookings')
+          .where('rideId', isEqualTo: rideId)
+          .get();
+
+      print("DEBUG: Found ${bookings.docs.length} bookings.");
+      if (bookings.docs.isNotEmpty) {
+        final batch = _firestore.batch();
+        for (final doc in bookings.docs) {
+          batch.update(doc.reference, updateData);
+        }
+        await batch.commit();
+        print("DEBUG: Bookings metadata updated.");
+      }
+    } catch (e) {
+      print("DEBUG: Error updating bookings metadata: $e");
+    }
+
+    // 3. Send Notifications
+    try {
+      final rideDoc = await _firestore.collection('rides').doc(rideId).get();
+      if (rideDoc.exists) {
+        final data = rideDoc.data()!;
+        final driverId = data['driverId'];
+
+        if (senderId == driverId) {
+          // Sender is driver, notify all passengers
+          final bookedUsers =
+              List<Map<String, dynamic>>.from(data['bookedUsers'] ?? []);
+          for (final user in bookedUsers) {
+            _sendNotification(user['uid'], "New Message",
+                "$senderName: $message", "message", rideId);
+          }
+        } else {
+          // Sender is passenger, notify driver
+          _sendNotification(driverId, "New Message", "$senderName: $message",
+              "message", rideId);
+        }
+      }
+    } catch (e) {
+      print("DEBUG: Error sending notification: $e");
+    }
+  }
+
+  @override
+  Future<void> markMessagesAsRead(String rideId, String currentUserId) async {
+    final batch = _firestore.batch();
+    final query = await _firestore
+        .collection('rides')
+        .doc(rideId)
+        .collection('messages')
+        .where('isRead', isEqualTo: false)
+        .where('senderId', isNotEqualTo: currentUserId)
         .get();
 
-    final batch = _firestore.batch();
-    for (final doc in bookings.docs) {
-      batch.update(doc.reference, updateData);
+    for (final doc in query.docs) {
+      batch.update(doc.reference, {'isRead': true});
     }
     await batch.commit();
   }
@@ -429,6 +512,7 @@ class FirebaseRideRepository implements RideRepository {
 
   @override
   Stream<List<String>> getTypingUsers(String rideId, String excludeUserId) {
+    print("DEBUG: Fetching typing status from rides/$rideId/typing");
     return _firestore
         .collection('rides')
         .doc(rideId)

@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../repositories/user_repository.dart';
 import '../../repositories/ride_repository.dart';
@@ -107,8 +108,39 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: _glassContainer(
                           padding: const EdgeInsets.all(8),
                           borderRadius: 12,
-                          child: const Icon(Icons.notifications_none,
-                              color: Colors.white),
+                          child: StreamBuilder<QuerySnapshot>(
+                            stream: FirebaseFirestore.instance
+                                .collection('notifications')
+                                .where('userId',
+                                    isEqualTo: _userRepo.currentUser?.uid)
+                                .where('isRead', isEqualTo: false)
+                                .snapshots(),
+                            builder: (context, snapshot) {
+                              final count = snapshot.data?.docs.length ?? 0;
+                              return Stack(
+                                children: [
+                                  const Icon(Icons.notifications_none,
+                                      color: Colors.white),
+                                  if (count > 0)
+                                    Positioned(
+                                      right: 0,
+                                      top: 0,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(2),
+                                        decoration: const BoxDecoration(
+                                          color: Colors.redAccent,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        constraints: const BoxConstraints(
+                                          minWidth: 8,
+                                          minHeight: 8,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              );
+                            },
+                          ),
                         ),
                       ),
                     ],
