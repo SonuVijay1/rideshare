@@ -445,7 +445,7 @@ class _AccountScreenState extends State<AccountScreen>
                                   const SizedBox(height: 20),
 
                                   // Personal Profile Link
-                                  _tile("Personal Profile", "View & Edit",
+                                  _tile("Profile",
                                       onTap: () => Navigator.push(
                                             context,
                                             CustomPageRoute(
@@ -454,7 +454,7 @@ class _AccountScreenState extends State<AccountScreen>
 
                                   const SizedBox(height: 20),
                                   section("Vehicle Details"),
-                                  _tile("My Vehicles", "Manage",
+                                  _tile("My Vehicles",
                                       onTap: () => Navigator.push(
                                           context,
                                           CustomPageRoute(
@@ -478,43 +478,6 @@ class _AccountScreenState extends State<AccountScreen>
                               )),
                         ),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: _logoutButton(() async {
-                          final shouldLogout = await showDialog<bool>(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              backgroundColor: const Color(0xFF1E1E1E),
-                              title: const Text("Log Out",
-                                  style: TextStyle(color: Colors.white)),
-                              content: const Text(
-                                  "Are you sure you want to log out?",
-                                  style: TextStyle(color: Colors.white70)),
-                              actions: [
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.pop(context, false),
-                                  child: const Text("Cancel"),
-                                ),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context, true),
-                                  child: const Text("Log Out",
-                                      style:
-                                          TextStyle(color: Colors.redAccent)),
-                                ),
-                              ],
-                            ),
-                          );
-
-                          if (shouldLogout == true) {
-                            await _userRepo.signOut();
-                            if (context.mounted) {
-                              Navigator.pushNamedAndRemoveUntil(
-                                  context, "/login", (route) => false);
-                            }
-                          }
-                        }),
-                      ),
                     ],
                   );
                 }),
@@ -526,20 +489,18 @@ class _AccountScreenState extends State<AccountScreen>
 
   // UI HELPERS
 
-  Widget _tile(String t, String v, {VoidCallback? onTap}) => GestureDetector(
+  Widget _tile(String t, {VoidCallback? onTap}) => GestureDetector(
         onTap: onTap,
         child: _glassContainer(
           padding: const EdgeInsets.all(14),
           margin: const EdgeInsets.only(bottom: 8),
           child: Row(
             children: [
-              Text(t, style: const TextStyle(color: Colors.white54)),
+              Text(t, style: const TextStyle(color: Colors.white)),
               const Spacer(),
-              Text(v, style: const TextStyle(color: Colors.white)),
-              if (onTap != null) ...[
-                const SizedBox(width: 8),
-                const Icon(Icons.edit, size: 14, color: Colors.white24)
-              ]
+              if (onTap != null)
+                const Icon(Icons.arrow_forward_ios,
+                    size: 14, color: Colors.white54)
             ],
           ),
         ),
@@ -809,22 +770,6 @@ class _AccountScreenState extends State<AccountScreen>
             fillColor: Colors.white10,
             border:
                 OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
-      );
-
-  Widget _logoutButton(VoidCallback onTap) => SizedBox(
-        width: double.infinity,
-        child: OutlinedButton(
-            style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Colors.redAccent),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14))),
-            onPressed: onTap,
-            child: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text("Log Out",
-                  style: TextStyle(
-                      color: Colors.redAccent, fontWeight: FontWeight.bold)),
-            )),
       );
 
   Widget _glassContainer({

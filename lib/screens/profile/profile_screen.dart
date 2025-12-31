@@ -9,6 +9,7 @@ import '../../utils/custom_route.dart';
 import 'edit_profile_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'personal_details_screen.dart';
+import 'professional_details_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -61,21 +62,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         title: const Text("My Profile", style: TextStyle(color: Colors.white)),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                CustomPageRoute(child: const EditProfileScreen()),
-              ).then((_) => _fetchUserData());
-            },
-            child: const Text("Edit", style: TextStyle(color: Colors.white)),
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings, color: Colors.white),
-            onPressed: () {},
-          ),
-        ],
       ),
       body: Stack(
         children: [
@@ -100,47 +86,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Column(
                       children: [
                         // Profile Header
-                        Center(
-                          child: Column(
-                            children: [
-                              CircleAvatar(
-                                radius: 50,
-                                backgroundColor: Colors.grey[800],
-                                backgroundImage:
-                                    _userData?['profilePic'] != null
-                                        ? NetworkImage(_userData!['profilePic'])
-                                        : null,
-                                child: _userData?['profilePic'] == null
-                                    ? const Icon(Icons.person,
-                                        size: 50, color: Colors.white)
-                                    : null,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                _userData?['name'] ?? "User",
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                user.email ?? "",
-                                style: const TextStyle(
-                                    color: Colors.white54, fontSize: 14),
-                              ),
-                              if (_userData?['occupation'] != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4.0),
-                                  child: Text(
-                                    "${_userData?['occupation']} ${_userData?['company'] != null ? 'at ${_userData?['company']}' : ''}",
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 40,
+                              backgroundColor: Colors.grey[800],
+                              backgroundImage: _userData?['profilePic'] != null
+                                  ? NetworkImage(_userData!['profilePic'])
+                                  : null,
+                              child: _userData?['profilePic'] == null
+                                  ? const Icon(Icons.person,
+                                      size: 40, color: Colors.white)
+                                  : null,
+                            ),
+                            const SizedBox(width: 20),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _userData?['name'] ?? "User",
                                     style: const TextStyle(
-                                        color: Colors.white70, fontSize: 13),
+                                      color: Colors.white,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                ),
-                            ],
-                          ),
+                                  const SizedBox(height: 4),
+                                  if (_userData?['occupation'] != null)
+                                    Text(
+                                      "${_userData?['occupation']} ${_userData?['company'] != null ? '@ ${_userData?['company']}' : ''}",
+                                      style: const TextStyle(
+                                          color: Colors.white70, fontSize: 14),
+                                    ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    user.phoneNumber ??
+                                        _userData?['phone'] ??
+                                        "No Mobile",
+                                    style: const TextStyle(
+                                        color: Colors.white54, fontSize: 13),
+                                  ),
+                                  Text(
+                                    user.email ?? _userData?['email'] ?? "",
+                                    style: const TextStyle(
+                                        color: Colors.white54, fontSize: 13),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 30),
 
@@ -166,16 +161,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         const SizedBox(height: 30),
 
-                        // About Section (Bio & LinkedIn)
-                        _buildInfoCard(),
-                        const SizedBox(height: 30),
-
                         // Menu Options
                         _menuItem(Icons.person_outline, "Personal Details", () {
                           Navigator.push(
                             context,
                             CustomPageRoute(
                                 child: const PersonalDetailsScreen()),
+                          );
+                        }),
+                        const SizedBox(height: 12),
+                        _menuItem(Icons.work_outline, "Professional Details",
+                            () {
+                          Navigator.push(
+                            context,
+                            CustomPageRoute(
+                                child: const ProfessionalDetailsScreen()),
                           );
                         }),
                         const SizedBox(height: 12),
@@ -212,8 +212,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         SizedBox(
                           width: double.infinity,
                           child: TextButton(
-                            onPressed: () {
-                              // _userRepo.signOut();
+                            onPressed: () async {
+                              final shouldLogout = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  backgroundColor: const Color(0xFF1E1E1E),
+                                  title: const Text("Log Out",
+                                      style: TextStyle(color: Colors.white)),
+                                  content: const Text(
+                                      "Are you sure you want to log out?",
+                                      style: TextStyle(color: Colors.white70)),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, false),
+                                      child: const Text("Cancel"),
+                                    ),
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, true),
+                                      child: const Text("Log Out",
+                                          style: TextStyle(
+                                              color: Colors.redAccent)),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (shouldLogout == true) {
+                                await _userRepo.signOut();
+                                if (context.mounted) {
+                                  Navigator.pushNamedAndRemoveUntil(
+                                      context, "/login", (route) => false);
+                                }
+                              }
                             },
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -236,86 +267,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoCard() {
-    final bio = _userData?['bio'];
-    final linkedin = _userData?['linkedin'];
-    final sector = _userData?['sector'];
-    final achievements = _userData?['achievements'];
-
-    if ((bio == null || bio.isEmpty) &&
-        (linkedin == null || linkedin.isEmpty) &&
-        sector == null &&
-        (achievements == null || achievements.isEmpty)) {
-      return const SizedBox.shrink();
-    }
-
-    return _glassContainer(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text("About",
-              style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18)),
-          const SizedBox(height: 16),
-          if (bio != null && bio.isNotEmpty) ...[
-            Text(bio,
-                style: const TextStyle(color: Colors.white70, height: 1.5)),
-            const SizedBox(height: 20),
-          ],
-          if (sector != null) ...[
-            Text("Sector: $sector",
-                style: const TextStyle(
-                    color: Colors.white70, fontWeight: FontWeight.w500)),
-            const SizedBox(height: 12),
-          ],
-          if (achievements != null && achievements.isNotEmpty) ...[
-            const Text("Achievements",
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            Text(achievements,
-                style: const TextStyle(color: Colors.white70, height: 1.4)),
-            const SizedBox(height: 20),
-          ],
-          if (linkedin != null && linkedin.isNotEmpty)
-            InkWell(
-              onTap: () async {
-                final Uri url = Uri.parse(linkedin);
-                if (await canLaunchUrl(url)) {
-                  await launchUrl(url, mode: LaunchMode.externalApplication);
-                }
-              },
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                        color: Colors.blue[700],
-                        borderRadius: BorderRadius.circular(4)),
-                    child: const Text("in",
-                        style: TextStyle(
-                            color: Colors.white, fontWeight: FontWeight.bold)),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text("View LinkedIn Profile",
-                        style: TextStyle(color: Colors.blueAccent)),
-                  ),
-                  const Icon(Icons.open_in_new,
-                      color: Colors.blueAccent, size: 16),
-                ],
-              ),
-            ),
         ],
       ),
     );

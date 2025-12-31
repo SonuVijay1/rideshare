@@ -13,12 +13,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _bioController = TextEditingController();
-  final _occupationController = TextEditingController();
-  final _companyController = TextEditingController();
-  final _linkedinController = TextEditingController();
-  final _achievementsController = TextEditingController();
-  String? _selectedSector;
-  final List<String> _sectors = ['Private', 'Government', 'Self-Employed', 'Student', 'Other'];
 
   final UserRepository _userRepo = FirebaseUserRepository();
   bool _isLoading = false;
@@ -37,14 +31,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         setState(() {
           _nameController.text = data['name'] ?? '';
           _bioController.text = data['bio'] ?? '';
-          _occupationController.text = data['occupation'] ?? '';
-          _companyController.text = data['company'] ?? '';
-          _linkedinController.text = data['linkedin'] ?? '';
-          _achievementsController.text = data['achievements'] ?? '';
-          _selectedSector = data['sector'];
-          if (_selectedSector != null && !_sectors.contains(_selectedSector)) {
-            _selectedSector = null;
-          }
         });
       }
     }
@@ -60,11 +46,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         await _userRepo.updateUserData(user.uid, {
           'name': _nameController.text.trim(),
           'bio': _bioController.text.trim(),
-          'occupation': _occupationController.text.trim(),
-          'company': _companyController.text.trim(),
-          'linkedin': _linkedinController.text.trim(),
-          'achievements': _achievementsController.text.trim(),
-          'sector': _selectedSector,
         });
         if (mounted) Navigator.pop(context);
       }
@@ -112,22 +93,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     _buildTextField("Full Name", _nameController),
                     const SizedBox(height: 16),
                     _buildTextField("Bio", _bioController, maxLines: 3),
-                    const SizedBox(height: 16),
-                    _buildDropdown("Sector", _selectedSector, _sectors, (val) {
-                      setState(() => _selectedSector = val);
-                    }),
-                    const SizedBox(height: 16),
-                    _buildTextField("Designation / Role", _occupationController,
-                        hint: "e.g. Software Engineer"),
-                    const SizedBox(height: 16),
-                    _buildTextField("Company Name", _companyController,
-                        hint: "e.g. Google"),
-                    const SizedBox(height: 16),
-                    _buildTextField("Achievements", _achievementsController,
-                        maxLines: 3, hint: "e.g. Employee of the month..."),
-                    const SizedBox(height: 16),
-                    _buildTextField("LinkedIn Profile URL", _linkedinController,
-                        hint: "https://linkedin.com/in/..."),
                     const SizedBox(height: 32),
                     SizedBox(
                       width: double.infinity,
@@ -190,48 +155,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     val != null && val.isEmpty && label == "Full Name"
                         ? "Required"
                         : null,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDropdown(String label, String? value, List<String> items,
-      Function(String?) onChanged) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label,
-            style: const TextStyle(color: Colors.white54, fontSize: 12)),
-        const SizedBox(height: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withOpacity(0.1)),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: value,
-                  isExpanded: true,
-                  dropdownColor: const Color(0xFF1E1E1E),
-                  style: const TextStyle(color: Colors.white),
-                  icon: const Icon(Icons.keyboard_arrow_down,
-                      color: Colors.white54),
-                  hint: const Text("Select",
-                      style: TextStyle(color: Colors.white24)),
-                  items: items
-                      .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                      .toList(),
-                  onChanged: onChanged,
-                ),
               ),
             ),
           ),
